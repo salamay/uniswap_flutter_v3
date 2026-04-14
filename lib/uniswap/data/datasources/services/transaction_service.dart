@@ -32,6 +32,24 @@ class TransactionService{
     }
   }
 
+  Future<BigInt> getChainNetworkFee({required String rpcUrl,required int chainId})async{
+    try{
+      logger("Getting chain $chainId network fee",runtimeType.toString());
+      Web3Client webClient=await ClientResolver.resolveClient(rpcUrl: rpcUrl);
+      EtherAmount gasPrice=await webClient.getGasPrice();
+      logger("Gas price in wei: ${gasPrice.getInWei.toString()}",runtimeType.toString());
+      logger("Gas price in gwei: ${gasPrice.getValueInUnit(EtherUnit.gwei).toString()}",runtimeType.toString());
+      if(chainId==1){
+        return gasPrice.getInWei*BigInt.from(3);
+      }else{
+        return gasPrice.getInWei*BigInt.from(2);
+      }
+    }catch(e){
+      logger(e.toString(),runtimeType.toString());
+      throw Exception("Unable to get network fee");
+    }
+  }
+
   Future<BigInt> estimateTxGas({required String sender, required String to, required String rpcUrl, required Uint8List data, EtherAmount? value}) async {
     try {
       logger(runtimeType.toString(),"SwapService");
@@ -43,56 +61,6 @@ class TransactionService{
     } catch (e) {
       logger(e.toString(),"SwapService");
       throw Exception(e.toString());
-    }
-  }
-
-  Future<String> approve({required String walletAddress, required String privateKey, required String spender, required  Token token0, required BigInt amountIn, required NetworkRpc network,required NetworkFee fee}) async {
-    try {
-      logger("Approving $spender to spend ${token0.symbol} $amountIn",runtimeType.toString());
-      TokenFactory _tokenFactory = TokenFactory();
-      Web3Client web3client = await ClientResolver.resolveClient(rpcUrl: network.rpcUrl);
-      int chainId = network.chainId;
-      bool isIntermediary = false;
-      final String abi = await rootBundle.loadString(token_contract_abi);
-      String contractAddress = token0.contractAddress!;
-      final credentials = await _tokenFactory.getCredentials(privateKey);
-      final contract = await _tokenFactory.intContract(abi, contractAddress, token0.name);
-      final function = contract.function('approve');
-      List<dynamic> params = [EthereumAddress.fromHex(spender), amountIn];
-      //if its not intermediary, approves the router address, otherwise approves the universal router
-      // if (!isIntermediary) {
-      //   params = [EthereumAddress.fromHex(spender), amountIn];
-      // } else {
-      //   params = [EthereumAddress.fromHex(spender2), amountIn];
-      // }
-      int maxGas = fee.maxGas;
-      EtherAmount gasPrice = EtherAmount.fromBigInt(EtherUnit.wei, fee.gasPrice);
-      Transaction transaction = await constructTx(contract: contract, function: function, credentials: credentials, params: params, gasPrice: gasPrice, maxGas: maxGas);
-      Uint8List signedTransaction = await web3client.signTransaction(credentials, transaction, chainId: chainId, fetchChainIdFromNetworkId: false);
-      String txId = await web3client.sendRawTransaction(signedTransaction);
-      logger("TxId: $txId",runtimeType.toString());
-      return txId;
-    } catch (e) {
-      logger(e.toString(),runtimeType.toString());
-      throw Exception(e);
-    }
-  }
-
-  Future<BigInt> estimateApprove2Tx({required String privateKey, required spender, required BigInt amountIn, required String contractAddress, required String rpcUrl}) async {
-    try {
-      TokenFactory _tokenFactory = TokenFactory();
-      Web3Client? web3client = await ClientResolver.resolveClient(rpcUrl: rpcUrl);
-      final String abi = await rootBundle.loadString(token_contract_abi);
-      final credentials = await _tokenFactory.getCredentials(privateKey);
-      final contract = await _tokenFactory.intContract(abi, contractAddress, "TokenContract");
-      final function = contract.function('approve');
-      List<dynamic> params = [EthereumAddress.fromHex(spender), amountIn];
-      Transaction tx = await constructTx(contract: contract, function: function, credentials: credentials, params: params);
-      BigInt gas = await estimateTxGas(sender: credentials.address.with0x, to: contractAddress, rpcUrl: rpcUrl, data: tx.data!);
-      return gas;
-    } catch (e) {
-      logger(e.toString(),runtimeType.toString());
-      throw Exception("Could not get fee");
     }
   }
 

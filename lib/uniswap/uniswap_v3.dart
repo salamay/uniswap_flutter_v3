@@ -5,6 +5,7 @@ import 'package:uniswap_flutter_v3/uniswap/domain/entities/network_rpc.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/pool.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/token.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/client_resolver.dart';
+import 'package:uniswap_flutter_v3/uniswap/utils/constants/constants.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/logger.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/token_factory.dart';
 
@@ -19,6 +20,9 @@ import 'domain/entities/transaction_status.dart';
 /// ## Quick Start
 ///
 /// ```dart
+/// // 0. Initialize Hive (once, typically in main())
+/// await UniswapV3.init();
+///
 /// // 1. Create an instance
 /// final uniswap = UniswapV3(
 ///   rpcUrl: 'https://mainnet.infura.io/v3/YOUR_KEY',
@@ -33,12 +37,20 @@ import 'domain/entities/transaction_status.dart';
 /// // 3. Find the best pool
 /// final pool = await uniswap.getPool(tokenA: usdc, tokenB: weth);
 ///
-/// // 4. Swap (human-readable amounts, automatic gas estimation)
+/// // 4. Estimate gas (required — maxGas has no default)
+/// final gas = await uniswap.estimateTokenToTokenSwap(
+///   pool: pool!,
+///   amountIn: 100.0,
+///   privateKey: '0xYOUR_PRIVATE_KEY',
+/// );
+///
+/// // 5. Swap (human-readable amounts)
 /// final txHash = await uniswap.swapTokenToToken(
 ///   privateKey: '0xYOUR_PRIVATE_KEY',
-///   pool: pool!,
+///   pool: pool,
 ///   amountIn: 100.0,        // 100 USDC
-///   slippagePercent: 0.5,   // 0.5% slippage tolerance
+///   slippagePercent: 1,      // 1% slippage tolerance
+///   maxGas: gas.toInt(),
 /// );
 /// ```
 class UniswapV3 {
@@ -60,7 +72,19 @@ class UniswapV3 {
   late final NetworkRpc _network;
   final TokenFactory _tokenFactory = TokenFactory();
 
-  static Future<void> init()async{
+  /// Initializes Hive storage for `graphql_flutter` caching.
+  ///
+  /// Must be called once (typically from `main()`) before any instance of
+  /// [UniswapV3] is used to fetch pools from The Graph.
+  ///
+  /// ```dart
+  /// void main() async {
+  ///   WidgetsFlutterBinding.ensureInitialized();
+  ///   await UniswapV3.init();
+  ///   runApp(const MyApp());
+  /// }
+  /// ```
+  static Future<void> init() async {
     await initHiveForFlutter();
   }
   /// Creates a new [UniswapV3] instance configured for a specific chain.
@@ -111,14 +135,40 @@ class UniswapV3 {
     );
   }
 
-  Future<TransactionStatus> waitForTransaction(String txHash, int maxWaitTime){
-    return executor.waitForTransactionConfirmation(txHash: txHash, rpcUrl:  rpcUrl,maxWaitTime: maxWaitTime,pollInterval: 4);
+  /// Polls the network until a transaction is mined, reverted, or the timeout elapses.
+  ///
+  /// [txHash] - The transaction hash returned by any swap/approve method.
+  /// [maxWaitTime] - Maximum total time to wait, in seconds. Polls every 4s.
+  ///
+  /// Returns a [TransactionStatus] indicating success, failure, or pending.
+  ///
+  /// ```dart
+  /// final status = await uniswap.waitForTransaction(txHash, 60);
+  /// ```
+  Future<TransactionStatus> waitForTransaction(String txHash, int maxWaitTime) {
+    return executor.waitForTransactionConfirmation(
+      txHash: txHash,
+      rpcUrl: rpcUrl,
+      maxWaitTime: maxWaitTime,
+      pollInterval: 4,
+    );
   }
 
   // ---------------------------------------------------------------------------
   // Gas Estimation (simplified)
   // ---------------------------------------------------------------------------
 
+  /// Fetches the current gas price (in wei) from the configured RPC.
+  ///
+  /// Useful to pre-compute `gasPrice` before estimating or sending a swap.
+  /// [rpcUrl] and [chainId] are passed explicitly so you can override them
+  /// for a different network without constructing a new [UniswapV3] instance.
+  Future<BigInt> getChainNetworkFee({
+    required String rpcUrl,
+    required int chainId,
+  }) async {
+    return executor.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
+  }
   /// Estimates gas for approving a token spend (required before swapping ERC-20 tokens).
   ///
   /// [token] - The token to approve.
@@ -133,6 +183,26 @@ class UniswapV3 {
   }) {
     return _executor.estimateApproveTx(
       from: token,
+      network: _network,
+      amountIn: amount,
+      privateKey: privateKey,
+    );
+  }
+  /// Estimates gas for a Permit2 approval (required for Universal Router swaps
+  /// involving the native currency on supported chains).
+  ///
+  /// [token] - The ERC-20 token to grant Permit2 allowance over.
+  /// [amount] - Human-readable amount (e.g., 100.0 for 100 USDC).
+  /// [privateKey] - The wallet's private key (hex string, with or without 0x prefix).
+  ///
+  /// Returns estimated gas as [BigInt] in wei.
+  Future<BigInt> estimatePermit2Approval({
+    required Token token,
+    required double amount,
+    required String privateKey,
+  }) {
+    return _executor.estimatePermit2Approval(
+      token: token,
       network: _network,
       amountIn: amount,
       privateKey: privateKey,
@@ -154,21 +224,13 @@ class UniswapV3 {
     final walletAddress = await _getWalletAddress(privateKey);
     final amountInWei = toWei(amountIn, pool.token0.decimals);
     final poolFee = _parsePoolFee(pool);
-    Token token0=pool.token0;
-    Token token1=pool.token1;
-    if(!pool.isInverse){
-      pool.token0=token0;
-      pool.token1=token1;
-    }else{
-      pool.token0=token1;
-      pool.token1=token0;
-    }
+    Pool newPool=_checkPool(pool);
 
     return _executor.estimateSwapTx(
       privateKey: privateKey,
       fromAddress: walletAddress,
       poolFee: poolFee,
-      pair: pool,
+      pair: newPool,
       amountIn: amountInWei,
       network: _network,
     );
@@ -179,35 +241,27 @@ class UniswapV3 {
   /// [pool] - The pool obtained from [getPool].
   /// [amountIn] - Human-readable input amount.
   /// [privateKey] - The wallet's private key.
-  /// [minAmountOut] - Optional minimum output in human-readable form. Defaults to 0.
+  ///
+  /// Note: estimation is always performed with `amountOutMin = 0`;
+  /// apply slippage only when calling [swapTokenToNative].
   ///
   /// Returns estimated gas as [BigInt] in wei.
   Future<BigInt> estimateTokenToNativeSwap({
     required Pool pool,
     required double amountIn,
     required String privateKey,
-    double minAmountOut = 0,
   }) {
     final amountInWei = toWei(amountIn, pool.token0.decimals);
     final poolFee = _parsePoolFee(pool);
-    // For native output, use 18 decimals (ETH/BNB/POL are all 18)
-    final minOutWei = toWei(minAmountOut, 18);
-    Token token0=pool.token0;
-    Token token1=pool.token1;
-    if(!pool.isInverse){
-      pool.token0=token0;
-      pool.token1=token1;
-    }else{
-      pool.token0=token1;
-      pool.token1=token0;
-    }
-
+    final price=pool.token0Price??0;
+    Pool newPool=_checkPool(pool);
     return _executor.estimateTokenToNativeSwapTx(
       privateKey: privateKey,
-      pool: pool,
+      pool: newPool,
       network: _network,
       amountIn: amountInWei,
-      wethAmountMin: minOutWei,
+      //Set this to zero for estimation, dont set for the actual transaction
+      wethAmountMin: BigInt.zero,
       poolFee: poolFee,
     );
   }
@@ -217,34 +271,27 @@ class UniswapV3 {
   /// [pool] - The pool obtained from [getPool].
   /// [amountIn] - Human-readable input amount of native currency.
   /// [privateKey] - The wallet's private key.
-  /// [minAmountOut] - Optional minimum output in human-readable form. Defaults to 0.
+  ///
+  /// Note: estimation is always performed with `amountOutMin = 0`;
+  /// apply slippage only when calling [swapNativeToToken].
   ///
   /// Returns estimated gas as [BigInt] in wei.
   Future<BigInt> estimateNativeToTokenSwap({
     required Pool pool,
     required double amountIn,
     required String privateKey,
-    double minAmountOut = 0,
   }) {
     // Native input is always 18 decimals
     final amountInWei = toWei(amountIn, 18);
     final poolFee = _parsePoolFee(pool);
-    final minOutWei = toWei(minAmountOut, pool.token1.decimals);
-    Token token0=pool.token0;
-    Token token1=pool.token1;
-    if(!pool.isInverse){
-      pool.token0=token0;
-      pool.token1=token1;
-    }else{
-      pool.token0=token1;
-      pool.token1=token0;
-    }
+    Pool newPool=_checkPool(pool);
 
     return _executor.estimateNativeToTokenSwapTx(
       privateKey: privateKey,
-      pool: pool,
+      pool: newPool,
       amountIn: amountInWei,
-      amountOutMin: minOutWei,
+      //Set this to zero for estimation, dont set for the actual transaction
+      amountOutMin: BigInt.zero,
       poolFee: poolFee,
       network: _network,
     );
@@ -259,18 +306,22 @@ class UniswapV3 {
   /// [privateKey] - The wallet's private key.
   /// [pool] - The pool obtained from [getPool]. `pool.token0` is the input token.
   /// [amountIn] - Human-readable amount to swap (e.g., 100.0 for 100 USDC).
-  /// [slippagePercent] - Slippage tolerance as a percentage (e.g., 0.5 for 0.5%). Defaults to 0.5.
-  /// [gasPrice] - Optional gas price in Gwei. If omitted, fetched from the network.
-  /// [maxGas] - Optional max gas limit. If omitted, estimated automatically.
+  /// [slippagePercent] - Slippage tolerance as a percentage (e.g., 1 for 1%, 0.5 for 0.5%). Defaults to 1.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Required max gas limit. Use [estimateTokenToTokenSwap] to compute a value.
   ///
   /// Returns the transaction hash on success.
   ///
   /// ```dart
+  /// final gas = await uniswap.estimateTokenToTokenSwap(
+  ///   pool: pool, amountIn: 100.0, privateKey: myKey,
+  /// );
   /// final txHash = await uniswap.swapTokenToToken(
   ///   privateKey: myKey,
   ///   pool: pool,
   ///   amountIn: 100.0,
-  ///   slippagePercent: 0.5,
+  ///   slippagePercent: 1,
+  ///   maxGas: gas.toInt(),
   /// );
   /// print('Swap tx: $txHash');
   /// ```
@@ -278,27 +329,19 @@ class UniswapV3 {
     required String privateKey,
     required Pool pool,
     required double amountIn,
-    double slippagePercent = 0.5,
-    double? gasPrice,
-    int? maxGas,
+    double slippagePercent = 1,
+    BigInt? gasPrice,
+    required int maxGas,
   }) async {
     final amountInWei = toWei(amountIn, pool.token0.decimals);
     final poolFee = _parsePoolFee(pool);
-    Token token0=pool.token0;
-    Token token1=pool.token1;
-    if(!pool.isInverse){
-      pool.token0=token0;
-      pool.token1=token1;
-    }else{
-      pool.token0=token1;
-      pool.token1=token0;
-    }
-
+    double price=!pool.isInverse?pool.token0Price ?? 0:pool.token1Price ?? 0;
+    Pool newPool=_checkPool(pool);
     // Calculate minimum output with slippage
     final amountOutMin = _calculateMinOutput(
       amountIn: amountIn,
-      price: pool.token0Price ?? 0,
-      outputDecimals: pool.token1.decimals,
+      price: price,
+      outputDecimals: newPool.token1.decimals,
       slippagePercent: slippagePercent,
     );
 
@@ -311,7 +354,7 @@ class UniswapV3 {
     return _executor.swap(
       privateKey: privateKey,
       poolFee: poolFee,
-      pair: pool,
+      pair: newPool,
       amountIn: amountInWei,
       amountOutMin: amountOutMin,
       fee: fee,
@@ -324,9 +367,9 @@ class UniswapV3 {
   /// [privateKey] - The wallet's private key.
   /// [pool] - The pool obtained from [getPool]. `pool.token0` is the input token.
   /// [amountIn] - Human-readable amount to swap.
-  /// [slippagePercent] - Slippage tolerance as a percentage. Defaults to 0.5.
-  /// [gasPrice] - Optional gas price in Gwei.
-  /// [maxGas] - Optional max gas limit.
+  /// [slippagePercent] - Slippage tolerance as a percentage (e.g., 1 for 1%). Defaults to 0.5.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Required max gas limit. Use [estimateTokenToNativeSwap] to compute a value.
   ///
   /// Returns the transaction hash on success.
   Future<String> swapTokenToNative({
@@ -334,25 +377,18 @@ class UniswapV3 {
     required Pool pool,
     required double amountIn,
     double slippagePercent = 0.5,
-    double? gasPrice,
-    int? maxGas,
+    BigInt? gasPrice,
+    required int maxGas,
   }) async {
     final amountInWei = toWei(amountIn, pool.token0.decimals);
     final poolFee = _parsePoolFee(pool);
-    Token token0=pool.token0;
-    Token token1=pool.token1;
-    if(!pool.isInverse){
-      pool.token0=token0;
-      pool.token1=token1;
-    }else{
-      pool.token0=token1;
-      pool.token1=token0;
-    }
+    double price=pool.token0Price??0;
+    Pool newPool=_checkPool(pool);
 
     // For token->native, calculate min native output (18 decimals)
     final wethAmountMin = _calculateMinOutput(
       amountIn: amountIn,
-      price: pool.token0Price ?? 0,
+      price: price,
       outputDecimals: 18,
       slippagePercent: slippagePercent,
     );
@@ -364,7 +400,7 @@ class UniswapV3 {
 
     return _executor.tokenToNativeSwap(
       privateKey: privateKey,
-      pool: pool,
+      pool: newPool,
       amountIn: amountInWei,
       wethAmountMin: wethAmountMin,
       network: _network,
@@ -377,37 +413,30 @@ class UniswapV3 {
   ///
   /// [privateKey] - The wallet's private key.
   /// [pool] - The pool obtained from [getPool]. `pool.token1` is the output token.
-  /// [amountIn] - Human-readable amount of native currency to swap (e.g., 0.5 for 0.5 ETH).
-  /// [slippagePercent] - Slippage tolerance as a percentage. Defaults to 0.5.
-  /// [gasPrice] - Optional gas price in Gwei.
-  /// [maxGas] - Optional max gas limit.
+  /// [amountIn] - Human-readable amount of native currency to swap (e.g., 1 for 1 ETH).
+  /// [slippagePercent] - Slippage tolerance as a percentage (e.g., 1 for 1%). Defaults to 1.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Required max gas limit. Use [estimateNativeToTokenSwap] to compute a value.
   ///
   /// Returns the transaction hash on success.
   Future<String> swapNativeToToken({
     required String privateKey,
     required Pool pool,
     required double amountIn,
-    double slippagePercent = 0.5,
-    double? gasPrice,
-    int? maxGas,
+    double slippagePercent = 1,
+    BigInt? gasPrice,
+    required int maxGas,
   }) async {
     // Native is always 18 decimals
     final amountInWei = toWei(amountIn, 18);
     final poolFee = _parsePoolFee(pool);
-    Token token0=pool.token0;
-    Token token1=pool.token1;
-    if(!pool.isInverse){
-      pool.token0=token0;
-      pool.token1=token1;
-    }else{
-      pool.token0=token1;
-      pool.token1=token0;
-    }
+    double price=!pool.isInverse?pool.token0Price ?? 0:pool.token1Price ?? 0;
+    Pool newPool=_checkPool(pool);
 
     final amountOutMin = _calculateMinOutput(
       amountIn: amountIn,
-      price: pool.token1Price ?? 0,
-      outputDecimals: pool.token1.decimals,
+      price: price,
+      outputDecimals: newPool.token1.decimals,
       slippagePercent: slippagePercent,
     );
 
@@ -418,9 +447,8 @@ class UniswapV3 {
 
     return _executor.nativeToTokenSwap(
       privateKey: privateKey,
-      pool: pool,
+      pool: newPool,
       amountIn: amountInWei,
-      amountOutMin: amountOutMin,
       wethAmountMin: amountOutMin,
       poolFee: poolFee,
       fee: fee,
@@ -441,25 +469,29 @@ class UniswapV3 {
   /// [amount] - Human-readable amount to approve (e.g., 1000.0).
   ///            Pass [double.infinity] for unlimited approval.
   /// [privateKey] - The wallet's private key.
-  /// [gasPrice] - Optional gas price in Gwei.
-  /// [maxGas] - Optional max gas limit. Defaults to 100000.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Required max gas limit. Use [estimateApproval] to compute a value.
   ///
   /// Returns the approval transaction hash.
   ///
   /// ```dart
+  /// final gas = await uniswap.estimateApproval(
+  ///   token: usdc, amount: double.infinity, privateKey: myKey,
+  /// );
   /// // Approve unlimited USDC spending
   /// await uniswap.approveToken(
   ///   token: usdc,
   ///   amount: double.infinity,
   ///   privateKey: myKey,
+  ///   maxGas: gas.toInt(),
   /// );
   /// ```
   Future<String> approveToken({
     required Token token,
     required double amount,
     required String privateKey,
-    double? gasPrice,
-    int? maxGas,
+    BigInt? gasPrice,
+    required int maxGas,
   }) async {
     final spender = _executor.getUniswapSwapRouterAddress(chainId: chainId);
     final amountInWei = amount == double.infinity
@@ -469,14 +501,51 @@ class UniswapV3 {
 
     final fee = await _buildNetworkFee(
       gasPrice: gasPrice,
-      maxGas: maxGas ?? 100000,
+      maxGas: maxGas,
     );
-
-    return _executor.swapService.transactionService.approve(
-      walletAddress: await _getWalletAddress(privateKey),
+    return _executor.swapService.approve(
       privateKey: privateKey,
       spender: spender,
-      token0: token,
+      token: token,
+      amountIn: amountInWei,
+      network: _network,
+      fee: fee,
+    );
+  }
+
+  /// Grants Permit2 allowance over an ERC-20 token.
+  ///
+  /// Required before native-to-token or token-to-native swaps routed through
+  /// the Universal Router (which uses Uniswap's Permit2 contract).
+  ///
+  /// [token] - The ERC-20 token to approve.
+  /// [amount] - Human-readable amount. Pass [double.infinity] for unlimited.
+  /// [privateKey] - The wallet's private key.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Required max gas limit. Use [estimatePermit2Approval] to compute a value.
+  ///
+  /// Returns the approval transaction hash.
+  Future<String> approveUniswapPermit2({
+    required Token token,
+    required double amount,
+    required String privateKey,
+    BigInt? gasPrice,
+    required int maxGas,
+  }) async {
+    final spender = permit2ContractAddress;
+    final amountInWei = amount == double.infinity
+        ? BigInt.parse(
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935")
+        : toWei(amount, token.decimals);
+
+    final fee = await _buildNetworkFee(
+      gasPrice: gasPrice,
+      maxGas: maxGas,
+    );
+    return _executor.swapService.approve(
+      privateKey: privateKey,
+      spender: spender,
+      token: token,
       amountIn: amountInWei,
       network: _network,
       fee: fee,
@@ -573,9 +642,15 @@ class UniswapV3 {
     required int outputDecimals,
     required double slippagePercent,
   }) {
-    if (price <= 0) return BigInt.zero;
+
+    //Get the rate
     final expectedOutput = amountIn * price;
-    final minOutput = expectedOutput * (1 - slippagePercent / 100);
+    logger("AmountIn ${amountIn.toString()}", runtimeType.toString());
+    logger("Expected ${toWei(expectedOutput, outputDecimals)}", runtimeType.toString());
+    logger("Slippage $slippagePercent", runtimeType.toString());
+    final minOutput = expectedOutput * (1 - (slippagePercent / 100));
+    logger("Expected min ${toWei(minOutput, outputDecimals)}", runtimeType.toString());
+
     if (minOutput <= 0) return BigInt.zero;
     return toWei(minOutput, outputDecimals);
   }
@@ -583,25 +658,22 @@ class UniswapV3 {
   /// Builds a [NetworkFee] by fetching the current gas price from the network
   /// if not explicitly provided.
   Future<NetworkFee> _buildNetworkFee({
-    double? gasPrice,
-    int? maxGas,
+    BigInt? gasPrice,
+    required int maxGas,
   }) async {
-    BigInt gasPriceWei;
+    BigInt networkGasPrice;
 
     if (gasPrice != null) {
-      // User provided gas price in Gwei -> convert to wei
-      gasPriceWei = BigInt.from(gasPrice * 1e9);
+      // Caller-supplied gas price is expected to already be in wei.
+      networkGasPrice = gasPrice;
     } else {
-      // Fetch current gas price from the network
-      final client = await ClientResolver.resolveClient(rpcUrl: rpcUrl);
-      final networkGasPrice = await client.getGasPrice();
-      gasPriceWei = networkGasPrice.getInWei;
+      // Fetch current gas price from the network (returned in wei).
+      networkGasPrice = await getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
     }
 
     return NetworkFee(
-      gasPrice: gasPriceWei,
-      symbol: _resolveNativeSymbol(chainId),
-      maxGas: maxGas ?? 300000, // Reasonable default for swap txs
+      gasPrice: networkGasPrice,
+      maxGas: maxGas,
     );
   }
 
@@ -638,5 +710,22 @@ class UniswapV3 {
       default:
         return 'ETH';
     }
+  }
+
+  //Change back or reverse the token if the pool indicate inverse
+  //So  that the executor maintain the trading path, this is because the graph can return the pool in the wrong order as the user intends
+  Pool _checkPool(Pool pool){
+    Token token0=pool.token0;
+    Token token1=pool.token1;
+    Pool newPool=Pool(feeTier: pool.feeTier, token0Price: pool.token0Price, token1Price: pool.token1Price, token0: token0, token1: token1, poolAddress:pool. poolAddress, isInverse: pool.isInverse);
+
+    if(!pool.isInverse){
+      newPool.token0=token0;
+      newPool.token1=token1;
+    }else{
+      newPool.token0=token1;
+      newPool.token1=token0;
+    }
+    return newPool;
   }
 }

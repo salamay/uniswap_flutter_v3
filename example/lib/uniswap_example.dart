@@ -77,160 +77,222 @@ Future<void> findPoolExample() async {
   final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: weth);
 
   if (pool == null) {
-    print('No pool found for USDC/WETH');
+    print('No pool found for');
     return;
   }
 
   print('Pool address: ${pool.poolAddress}');
   print('Fee tier: ${pool.feeTier}');
-  print('USDC price in WETH: ${pool.token0Price}');
-  print('WETH price in USDC: ${pool.token1Price}');
+  print('token0Price price: ${pool.token0Price}');
+  print('token1Price price: ${pool.token1Price}');
   print('Liquidity: ${pool.liquidity}');
 }
 
 
 // ---------------------------------------------------------------------------
-// 4. ESTIMATE GAS
-// ---------------------------------------------------------------------------
-
-Future<void> estimateGasExample() async {
-  const privateKey = '0xYOUR_PRIVATE_KEY';
-  final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: dai);
-
-  if (pool == null) return;
-
-  // Estimate gas for a token-to-token swap
-  final gas = await ethUniswap.estimateTokenToTokenSwap(
-    pool: pool,
-    amountIn: 100.0, // 100 USDC — human-readable!
-    privateKey: privateKey,
-  );
-  print('Estimated gas: $gas wei');
-
-  // Estimate gas for approval
-  final approvalGas = await ethUniswap.estimateApproval(
-    token: usdc,
-    amount: 100.0,
-    privateKey: privateKey,
-  );
-  print('Approval gas: $approvalGas wei');
-}
-
-// ---------------------------------------------------------------------------
 // 5. TOKEN-TO-TOKEN SWAP (e.g., USDC -> DAI)
 // ---------------------------------------------------------------------------
 
-Future<void> tokenToTokenSwapExample() async {
-  const privateKey = '0xYOUR_PRIVATE_KEY';
-  final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: dai);
+void tokenToTokenSwapExample() async{
+  String rpcUrl="https://bsc-dataseed.binance.org";
+  int chainId=56;
+  String p =   "PrivateKey";
+  final usdc = Token(
+    name: 'USD Coin',
+    symbol: 'USDC',
+    contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+    decimals: 18,
+  );
 
-  if (pool == null) return;
+  final dai = Token(
+    name: 'Dai Stablecoin',
+    symbol: 'DAI',
+    contractAddress: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3',
+    decimals: 18,
+  );
 
-  // Step 1: Approve the router to spend USDC (only needed once or if allowance is used up)
-  final approvalTx = await ethUniswap.approveToken(
+  final pool = await bscUniswap.getPool(tokenA: usdc, tokenB: dai);
+  if (pool == null) {
+    print('No pool found for');
+    return;
+  }
+  print('Pool address: ${pool.poolAddress}');
+  print('Fee tier: ${pool.feeTier}');
+  print('token0Price price: ${pool.token0Price}');
+  print('token1Price price: ${pool.token1Price}');
+  print('Liquidity: ${pool.liquidity}');
+  BigInt? gasPrice=await bscUniswap.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
+
+  BigInt approveGas=await bscUniswap.estimateApproval(
     token: usdc,
-    amount: double.infinity, // Unlimited approval
-    privateKey: privateKey,
+    amount: 1,
+    privateKey: p,
   );
-  print('Approval tx: $approvalTx');
 
-  // Step 2: Swap 100 USDC for DAI with 0.5% slippage
-  final swapTx = await ethUniswap.swapTokenToToken(
-    privateKey: privateKey,
-    pool: pool,
-    amountIn: 100.0, // 100 USDC
-    slippagePercent: 0.5,
+  // Approve first
+  String approveHash=await bscUniswap.approveToken(
+      token: usdc,
+      amount: 1,
+      privateKey: p,
+      maxGas: approveGas.toInt(),
+      gasPrice: gasPrice
   );
-  print('Swap tx: $swapTx');
+  print('Approve hash: $approveHash');
+  TransactionStatus status=await bscUniswap.waitForTransaction(approveHash,30);
+  print('Approve status: $status');
+  // Estimate gas for a token-to-token swap
+  final gas = await bscUniswap.estimateTokenToTokenSwap(
+    pool: pool,
+    amountIn: 1, // 1 USDC — human-readable!
+    privateKey: p,
+  );
+  print('Estimated gas: $gas wei');
+  String swapHash=await bscUniswap.swapTokenToToken(
+      pool: pool,
+      amountIn: 1, // 100 USDC — human-readable!
+      privateKey: p,
+      gasPrice: gasPrice,
+      maxGas: gas.toInt()
+  );
+  print('Swap hash: $swapHash');
+
 }
+
 
 // ---------------------------------------------------------------------------
 // 6. TOKEN-TO-NATIVE SWAP (e.g., USDC -> ETH)
 // ---------------------------------------------------------------------------
+void tokenToNativeExample() async{
+  String rpcUrl="https://bsc-dataseed.binance.org";
+  int chainId=56;
+  String p =   "PrivateKey";
+  final bscUniswap = UniswapV3(
+    rpcUrl: rpcUrl,
+    chainId: chainId, // BSC
+    graphApiKey: '7e8b89f52322d9cdf2d03b3c2d135400',
+  );
+  final usdc = Token(
+    name: 'USD Coin',
+    symbol: 'USDC',
+    contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+    decimals: 18,
+  );
+  ///For Native token, you should use WETH address
+  //e.g for BNB you use WBNB, for ETH you use WETH, for MATIC you use WMATIC
 
-Future<void> tokenToNativeSwapExample() async {
-  const privateKey = '0xYOUR_PRIVATE_KEY';
-  final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: weth);
+  final nativeToken = Token(
+    name: 'WBNB',
+    symbol: 'WBNB',
+    contractAddress: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" ,
+    decimals: 18,
+  );
 
-  if (pool == null) return;
+  final pool = await bscUniswap.getPool(tokenA: usdc, tokenB: nativeToken);
+  if (pool == null) {
+    print('No pool found for ');
+    return;
+  }
+  print('Pool address: ${pool.poolAddress}');
+  print('Fee tier: ${pool.feeTier}');
+  print('Token0 price: ${pool.token0Price}');
+  print('Token1  price: ${pool.token1Price}');
+  print('Liquidity: ${pool.liquidity}');
+  BigInt? gasPrice=await bscUniswap.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
+
+  BigInt approveGas=await bscUniswap.estimatePermit2Approval(
+    token: usdc,
+    amount: 1,
+    privateKey: p,
+  );
 
   // Approve first
-  await ethUniswap.approveToken(
-    token: usdc,
-    amount: 500.0,
-    privateKey: privateKey,
+  String approveHash=await bscUniswap.approveUniswapPermit2(
+      token: usdc,
+      amount: 1,
+      privateKey: p,
+      maxGas: approveGas.toInt(),
+      gasPrice: gasPrice
   );
-
-  // Swap 500 USDC for ETH
-  final txHash = await ethUniswap.swapTokenToNative(
-    privateKey: privateKey,
+  print('Approve hash: $approveHash');
+  TransactionStatus status=await bscUniswap.waitForTransaction(approveHash,30);
+  print('Approve status: $status');
+  // Estimate gas for a token-to-token swap
+  final gas = await bscUniswap.estimateTokenToNativeSwap(
     pool: pool,
-    amountIn: 500.0,
-    slippagePercent: 1.0, // 1% slippage for volatile pairs
+    amountIn: 1, // 100 USDC — human-readable!
+    privateKey: p,
   );
-  print('Token -> Native tx: $txHash');
+  print('Estimated gas: $gas wei');
+  String swapHash=await bscUniswap.swapTokenToNative(
+    pool: pool,
+    amountIn: 1, // 100 USDC — human-readable!
+    privateKey: p,
+    gasPrice: gasPrice,
+    maxGas: gas.toInt(),
+
+  );
+  print('Swap hash: $swapHash');
+
 }
+
 
 // ---------------------------------------------------------------------------
 // 7. NATIVE-TO-TOKEN SWAP (e.g., ETH -> USDC)
 // ---------------------------------------------------------------------------
-
-Future<void> nativeToTokenSwapExample() async {
-  const privateKey = '0xYOUR_PRIVATE_KEY';
-  final pool = await ethUniswap.getPool(tokenA: weth, tokenB: usdc);
-
-  if (pool == null) return;
-
-  // No approval needed for native currency!
-  final txHash = await ethUniswap.swapNativeToToken(
-    privateKey: privateKey,
-    pool: pool,
-    amountIn: 0.5, // 0.5 ETH
-    slippagePercent: 0.5,
+void nativeToToken() async{
+  String rpcUrl="https://bsc-dataseed.binance.org";
+  int chainId=56;
+  String p =   "PrivateKey";
+  final bscUniswap = UniswapV3(
+    rpcUrl: rpcUrl,
+    chainId: chainId, // BSC
+    graphApiKey: '7e8b89f52322d9cdf2d03b3c2d135400',
   );
-  print('Native -> Token tx: $txHash');
-}
-
-// ---------------------------------------------------------------------------
-// 8. CUSTOM GAS SETTINGS
-// ---------------------------------------------------------------------------
-
-Future<void> customGasExample() async {
-  const privateKey = '0xYOUR_PRIVATE_KEY';
-  final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: dai);
-
-  if (pool == null) return;
-
-  // Provide your own gas price (in Gwei) and max gas limit
-  final txHash = await ethUniswap.swapTokenToToken(
-    privateKey: privateKey,
-    pool: pool,
-    amountIn: 50.0,
-    slippagePercent: 0.3,
-    gasPrice: 25.0, // 25 Gwei
-    maxGas: 250000,
+  ///For Native token, you should use WETH address
+  //e.g for BNB you use WBNB, for ETH you use WETH, for MATIC you use WMATIC
+  final nativeToken = Token(
+    name: 'WBNB',
+    symbol: 'WBNB',
+    contractAddress: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" ,
+    decimals: 18,
   );
-  print('Custom gas swap tx: $txHash');
-}
+  final usdc = Token(
+    name: 'USD Coin',
+    symbol: 'USDC',
+    contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+    decimals: 18,
+  );
 
-// ---------------------------------------------------------------------------
-// 9. AMOUNT CONVERSION UTILITIES
-// ---------------------------------------------------------------------------
+  final pool = await bscUniswap.getPool(tokenA: nativeToken, tokenB: usdc);
+  if (pool == null) {
+    print('No pool found for');
+    return;
+  }
+  print('Pool address: ${pool.poolAddress}');
+  print('Fee tier: ${pool.feeTier}');
+  print('Token0 price: ${pool.token0Price}');
+  print('Token1  price: ${pool.token1Price}');
+  print('Liquidity: ${pool.liquidity}');
+  BigInt? gasPrice=await bscUniswap.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
 
-void conversionExamples() {
-  // Human-readable to wei
-  final weiAmount = UniswapV3.toWei(1.5, 18);
-  print('1.5 ETH = $weiAmount wei'); // 1500000000000000000
+  // Estimate gas for a token-to-token swap
+  final gas = await bscUniswap.estimateNativeToTokenSwap(
+    pool: pool,
+    amountIn: 0.001623,
+    privateKey: p,
+  );
+  print('Estimated gas: $gas wei');
 
-  final usdcWei = UniswapV3.toWei(100.0, 6);
-  print('100 USDC = $usdcWei smallest unit'); // 100000000
+  String swapHash=await bscUniswap.swapNativeToToken(
+    pool: pool,
+    amountIn: 0.001623,
+    privateKey: p,
+    gasPrice: gasPrice,
+    maxGas: gas.toInt(),
 
-  // Wei back to human-readable
-  final ethAmount = UniswapV3.fromWei(BigInt.parse('1500000000000000000'), 18);
-  print('$ethAmount ETH'); // 1.5
+  );
+  print('Swap hash: $swapHash');
 
-  final usdcAmount = UniswapV3.fromWei(BigInt.from(100000000), 6);
-  print('$usdcAmount USDC'); // 100.0
 }
 
 // ---------------------------------------------------------------------------

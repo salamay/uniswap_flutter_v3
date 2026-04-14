@@ -24,15 +24,17 @@ abstract class SwapRepository {
   });
 
   Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String graphApiKey});
-
+  Future<BigInt> getChainNetworkFee({required String rpcUrl,required int chainId});
   Future<BigInt> estimateApproveTx({required Token from,required  NetworkRpc network, required double amountIn, required String privateKey});
-  Future<BigInt> estimateSwapTx({required String privateKey, required String fromAddress, required BigInt poolFee, required Pool pair, required BigInt amountIn, required NetworkRpc network});
+  Future<BigInt> estimatePermit2Approval({required Token token,required  NetworkRpc network, required double amountIn, required String privateKey});
+    Future<BigInt> estimateSwapTx({required String privateKey, required String fromAddress, required BigInt poolFee, required Pool pair, required BigInt amountIn, required NetworkRpc network});
   Future<BigInt> estimateTokenToNativeSwapTx({ required String privateKey,required Pool pool, required NetworkRpc network,required BigInt amountIn,required BigInt wethAmountMin, required BigInt poolFee});
   Future<BigInt> estimateNativeToTokenSwapTx({required String privateKey,required Pool pool,required BigInt amountIn, required BigInt amountOutMin, required BigInt poolFee,required NetworkRpc network});
 
+  Future<String> approve({required String privateKey, required String spender, required  Token token, required BigInt amountIn, required NetworkRpc network,required NetworkFee fee});
   Future<String> swap({required String privateKey,required BigInt poolFee, required Pool pair, required BigInt amountIn, required BigInt amountOutMin, required NetworkFee fee,required NetworkRpc network});
   Future<String> tokenToNativeSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt wethAmountMin,required NetworkRpc network,required NetworkFee fee, required BigInt poolFee});
-  Future<String> nativeToTokenSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt amountOutMin, required BigInt wethAmountMin, required BigInt poolFee,required NetworkFee fee,required NetworkRpc network});
+  Future<String> nativeToTokenSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt wethAmountMin, required BigInt poolFee,required NetworkFee fee,required NetworkRpc network});
 
 
   Future<Uint8List> encodeV3SwapExactInput({required List<dynamic> param, required String address});

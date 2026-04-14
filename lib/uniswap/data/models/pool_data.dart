@@ -77,12 +77,14 @@ class GraphPool {
 }
 
 class GraphToken {
+  String? id;
   String? decimals;
   String? derivedEth;
   String? name;
   String? symbol;
 
   GraphToken({
+    this.id,
     this.decimals,
     this.derivedEth,
     this.name,
@@ -90,6 +92,7 @@ class GraphToken {
   });
 
   factory GraphToken.fromJson(Map<String, dynamic> json) => GraphToken(
+    id: json["id"],
     decimals: json["decimals"],
     derivedEth: json["derivedETH"],
     name: json["name"],
@@ -97,6 +100,7 @@ class GraphToken {
   );
 
   Map<String, dynamic> toJson() => {
+    "id": id,
     "decimals": decimals,
     "derivedETH": derivedEth,
     "name": name,

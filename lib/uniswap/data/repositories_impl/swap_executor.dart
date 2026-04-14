@@ -27,6 +27,11 @@ class SwapExecutor extends SwapRepository {
       int pollInterval = 2}) {
     return swapService.waitForTransactionConfirmation(txHash: txHash, rpcUrl: rpcUrl, maxWaitTime: maxWaitTime, pollInterval: pollInterval);
   }
+  @override
+  Future<BigInt> getChainNetworkFee({required String rpcUrl, required int chainId}) {
+    // TODO: implement getChainNetworkFee
+    return swapService.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
+  }
 
   @override
   Future<Uint8List> encodeSweepETH({required List param, required String address}) {
@@ -55,7 +60,12 @@ class SwapExecutor extends SwapRepository {
   @override
   Future<BigInt> estimateApproveTx({required Token from, required NetworkRpc network, required double amountIn, required String privateKey}) {
     // TODO: implement estimateApproveTx
-    return swapService.estimateApproveTx(from: from, network: network, amountIn: amountIn, privateKey: privateKey);
+    return swapService.estimateApproveTx(token: from, network: network, amountIn: amountIn, privateKey: privateKey);
+  }
+  @override
+  Future<BigInt> estimatePermit2Approval({required Token token,required  NetworkRpc network, required double amountIn, required String privateKey}) async {
+    // TODO: implement estimateApproveTx
+    return swapService.estimateApproveTx(token: token, network: network, amountIn: amountIn, privateKey: privateKey);
   }
 
   @override
@@ -118,6 +128,11 @@ class SwapExecutor extends SwapRepository {
     return swapService.getPool(chainId: chainId, token0: token0, token1: token1, graphApiKey: graphApiKey);
   }
 
+  @override
+  Future<String> approve({required String privateKey, required String spender, required  Token token, required BigInt amountIn, required NetworkRpc network,required NetworkFee fee}) async {
+    return swapService.approve(privateKey: privateKey, spender: spender, token: token, amountIn: amountIn, network: network, fee: fee);
+  }
+
 
   @override
   Future<String> swap({required String privateKey, required BigInt poolFee, required Pool pair, required BigInt amountIn, required BigInt amountOutMin, required NetworkFee fee, required NetworkRpc network}) {
@@ -132,9 +147,11 @@ class SwapExecutor extends SwapRepository {
   }
 
   @override
-  Future<String> nativeToTokenSwap({required String privateKey, required Pool pool, required BigInt amountIn, required BigInt amountOutMin, required BigInt wethAmountMin, required BigInt poolFee, required NetworkFee fee, required NetworkRpc network}) {
+  Future<String> nativeToTokenSwap({required String privateKey, required Pool pool, required BigInt amountIn, required BigInt wethAmountMin, required BigInt poolFee, required NetworkFee fee, required NetworkRpc network}) {
     // TODO: implement nativeToTokenSwap
-    return swapService.nativeToTokenSwap(privateKey: privateKey, pool: pool, amountIn: amountIn, amountOutMin: amountOutMin, wethAmountMin: wethAmountMin, poolFee: poolFee, fee: fee, network: network);
+    return swapService.nativeToTokenSwap(privateKey: privateKey, pool: pool, amountIn: amountIn, wethAmountMin: wethAmountMin, poolFee: poolFee, fee: fee, network: network);
   }
+
+
 
 }
