@@ -9,6 +9,7 @@ import 'package:uniswap_flutter_v3/uniswap/utils/constants/constants.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/logger.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/token_factory.dart';
 
+import 'domain/entities/allowance.dart';
 import 'domain/entities/transaction_status.dart';
 
 /// A simplified facade for interacting with Uniswap V3.
@@ -17,7 +18,12 @@ import 'domain/entities/transaction_status.dart';
 /// to [BigInt], and calling different methods for different swap types,
 /// this class lets you work with human-readable amounts and a clean API.
 ///
-/// ## Quick Start
+/// ---
+///
+/// ## Quick Start — Token-to-Token Swap (SwapRouter02)
+///
+/// Token-to-token swaps (e.g. USDC → DAI) go through the SwapRouter02 and
+/// only need a single ERC-20 approval.
 ///
 /// ```dart
 /// // 0. Initialize Hive (once, typically in main())
@@ -27,32 +33,88 @@ import 'domain/entities/transaction_status.dart';
 /// final uniswap = UniswapV3(
 ///   rpcUrl: 'https://mainnet.infura.io/v3/YOUR_KEY',
 ///   chainId: 1,
-///   graphApiKey: 'YOUR_GRAPH_API_KEY', // from https://thegraph.com/studio/apikeys/
+///   graphApiKey: 'YOUR_GRAPH_API_KEY',
 /// );
 ///
-/// // 2. Define your tokens
+/// // 2. Define tokens
 /// final usdc = Token(name: 'USD Coin', symbol: 'USDC', contractAddress: '0xA0b8...', decimals: 6);
-/// final weth = Token(name: 'Wrapped Ether', symbol: 'WETH', contractAddress: '0xC02a...', decimals: 18);
+/// final dai  = Token(name: 'Dai',      symbol: 'DAI',  contractAddress: '0x6B17...', decimals: 18);
 ///
 /// // 3. Find the best pool
-/// final pool = await uniswap.getPool(tokenA: usdc, tokenB: weth);
+/// final pool = await uniswap.getPool(tokenA: usdc, tokenB: dai);
 ///
-/// // 4. Estimate gas (required — maxGas has no default)
-/// final gas = await uniswap.estimateTokenToTokenSwap(
-///   pool: pool!,
-///   amountIn: 100.0,
-///   privateKey: '0xYOUR_PRIVATE_KEY',
-/// );
+/// // 4. Approve the SwapRouter02 to spend USDC (one-time per token)
+/// final approvalGas = await uniswap.estimateApproval(token: usdc, amount: double.infinity, privateKey: myKey);
+/// await uniswap.approveToken(token: usdc, amount: double.infinity, privateKey: myKey, maxGas: approvalGas.toInt());
 ///
-/// // 5. Swap (human-readable amounts)
+/// // 5. Estimate swap gas, then swap
+/// final gas = await uniswap.estimateTokenToTokenSwap(pool: pool!, amountIn: 100.0, privateKey: myKey);
 /// final txHash = await uniswap.swapTokenToToken(
-///   privateKey: '0xYOUR_PRIVATE_KEY',
-///   pool: pool,
-///   amountIn: 100.0,        // 100 USDC
-///   slippagePercent: 1,      // 1% slippage tolerance
-///   maxGas: gas.toInt(),
+///   privateKey: myKey, pool: pool, amountIn: 100.0, slippagePercent: 1, maxGas: gas.toInt(),
 /// );
 /// ```
+///
+/// ---
+///
+/// ## Permit2 — Native ↔ Token Swaps (Universal Router)
+///
+/// Swaps that involve the native currency (ETH, BNB, POL, etc.) are routed
+/// through Uniswap's **Universal Router**, which uses **Permit2** for token
+/// authorisation instead of a direct ERC-20 allowance. Permit2 is an
+/// intermediary contract that holds allowances on behalf of spenders; it lets
+/// the Universal Router pull tokens without ever being approved directly.
+///
+/// There are **two separate on-chain approval steps** required before the first
+/// native ↔ token swap. Both are one-time setups per token:
+///
+/// ### Step 1 — ERC-20 → Permit2 (`approveUniswapPermit2`)
+///
+/// A standard ERC-20 `approve` that grants the **Permit2 contract** the right
+/// to move tokens from the wallet. Without this, the Permit2 contract cannot
+/// pull the token when the Universal Router requests it.
+///
+/// ```dart
+/// final gas1 = await uniswap.estimatePermit2Approval(token: usdc, amount: double.infinity, privateKey: myKey);
+/// await uniswap.approveUniswapPermit2(token: usdc, amount: double.infinity, privateKey: myKey, maxGas: gas1.toInt());
+/// ```
+///
+/// ### Step 2 — Permit2 → Universal Router (`callPermit2`)
+///
+/// Calls Permit2's own `approve(token, spender, amount, deadline)` to record a
+/// time-bounded allowance inside Permit2's internal ledger, scoped to the
+/// Universal Router. This is what the Universal Router actually reads when it
+/// asks Permit2 to transfer tokens on your behalf.
+///
+/// ```dart
+/// // Check first — skip if already set
+/// final allowance = await uniswap.checkPermitAllowance(token: usdc, ownerAddress: myAddress);
+/// if (allowance == BigInt.zero) {
+///   final gas2 = await uniswap.estimatePermit2Call(token: usdc, privateKey: myKey);
+///   await uniswap.callPermit2(token: usdc, privateKey: myKey, maxGas: gas2.toInt());
+/// }
+/// ```
+///
+/// ### Full Permit2 → Swap Example (ETH → USDC)
+///
+/// ```dart
+/// // One-time setup (per token)
+/// final approvalGas = await uniswap.estimatePermit2Approval(token: usdc, amount: double.infinity, privateKey: myKey);
+/// await uniswap.approveUniswapPermit2(token: usdc, amount: double.infinity, privateKey: myKey, maxGas: approvalGas.toInt());
+///
+/// final permit2Gas = await uniswap.estimatePermit2Call(token: usdc, privateKey: myKey);
+/// await uniswap.callPermit2(token: usdc, privateKey: myKey, maxGas: permit2Gas.toInt());
+///
+/// // Swap native → token
+/// final pool = await uniswap.getPool(tokenA: weth, tokenB: usdc);
+/// final swapGas = await uniswap.estimateNativeToTokenSwap(pool: pool!, amountIn: 0.1, privateKey: myKey);
+/// final txHash = await uniswap.swapNativeToToken(
+///   privateKey: myKey, pool: pool, amountIn: 0.1, slippagePercent: 1, maxGas: swapGas.toInt(),
+/// );
+/// ```
+///
+/// > **Tip:** Call [checkPermitAllowance] before each swap to decide whether
+/// > Step 2 needs to be repeated (Permit2 allowances carry a 30-minute
+/// > deadline and must be refreshed after expiry).
 class UniswapV3 {
   /// The RPC URL for the blockchain node.
   final String rpcUrl;
@@ -188,11 +250,17 @@ class UniswapV3 {
       privateKey: privateKey,
     );
   }
-  /// Estimates gas for a Permit2 approval (required for Universal Router swaps
-  /// involving the native currency on supported chains).
+  /// Estimates gas for the ERC-20 → Permit2 approval (Permit2 Step 1).
   ///
-  /// [token] - The ERC-20 token to grant Permit2 allowance over.
+  /// This is a standard ERC-20 `approve` that grants the **Permit2 contract**
+  /// itself the right to move [token] from the wallet. It must be executed once
+  /// per token before [callPermit2] (Step 2) can be called.
+  ///
+  /// See the class-level documentation for the full Permit2 approval flow.
+  ///
+  /// [token] - The ERC-20 token to approve for Permit2.
   /// [amount] - Human-readable amount (e.g., 100.0 for 100 USDC).
+  ///            Pass [double.infinity] for an unlimited (max uint256) approval.
   /// [privateKey] - The wallet's private key (hex string, with or without 0x prefix).
   ///
   /// Returns estimated gas as [BigInt] in wei.
@@ -206,6 +274,131 @@ class UniswapV3 {
       network: _network,
       amountIn: amount,
       privateKey: privateKey,
+    );
+  }
+
+  /// Estimates gas for the Permit2 → Universal Router allowance call (Permit2 Step 2).
+  ///
+  /// This calls Permit2's `approve(token, spender, amount, deadline)` to record
+  /// a time-bounded allowance inside Permit2's internal ledger, scoped to
+  /// [spender] (defaults to the Universal Router). The Universal Router reads
+  /// this ledger when pulling tokens during a swap — it never holds the ERC-20
+  /// allowance directly.
+  ///
+  /// Call [checkPermitAllowance] beforehand to skip this step if a valid
+  /// allowance already exists. Permit2 allowances carry a 30-minute deadline
+  /// and must be refreshed after expiry.
+  ///
+  /// See the class-level documentation for the full Permit2 approval flow.
+  ///
+  /// [token] - The ERC-20 token whose Permit2 allowance is being set.
+  /// [privateKey] - The wallet's private key (hex string, with or without 0x prefix).
+  /// [spender] - Optional spender address. Defaults to the Universal Router
+  ///             for the configured chain.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Upper-bound gas limit for the estimation transaction. Defaults to 300000.
+  ///
+  /// Returns estimated gas as [BigInt] in wei.
+  Future<BigInt> estimatePermit2Call({
+    required Token token,
+    required String privateKey,
+    String? spender,
+  }) async {
+    final spenderAddress = spender ?? _executor.getUniversalRouterAddress(chainId: chainId);
+    return _executor.estimatePermit2Call(
+      privateKey: privateKey,
+      tokenAddress: token.contractAddress!,
+      spenderAddress: spenderAddress,
+      rpcUrl: rpcUrl,
+      chainId: chainId,
+    );
+  }
+
+  /// Executes the Permit2 → Universal Router allowance call (Permit2 Step 2).
+  ///
+  /// Sends Permit2's `approve(token, spender, amount, deadline)` transaction,
+  /// recording a 30-minute allowance inside Permit2's internal ledger for
+  /// [spender] (defaults to the Universal Router). After this call the
+  /// Universal Router can pull [token] from the wallet during swaps.
+  ///
+  /// This is the **second of two approval steps** required before the first
+  /// native ↔ token swap. The first step ([approveUniswapPermit2]) must already
+  /// be complete before calling this method.
+  ///
+  /// Use [checkPermitAllowance] to check whether a valid allowance is already
+  /// in place and avoid sending unnecessary transactions. Allowances expire
+  /// after 30 minutes and need to be refreshed before each swap session.
+  ///
+  /// See the class-level documentation for the full Permit2 approval flow and
+  /// a complete code example.
+  ///
+  /// [token] - The ERC-20 token whose Permit2 allowance is being set.
+  /// [privateKey] - The wallet's private key (hex string, with or without 0x prefix).
+  /// [spender] - Optional spender address. Defaults to the Universal Router.
+  /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
+  /// [maxGas] - Required max gas limit. Use [estimatePermit2Call] to compute a value.
+  ///
+  /// Returns the transaction hash on success.
+  Future<String> callPermit2({
+    required Token token,
+    required String privateKey,
+    String? spender,
+    BigInt? gasPrice,
+    required int maxGas,
+  }) async {
+    final spenderAddress = spender ?? _executor.getUniversalRouterAddress(chainId: chainId);
+    final fee = await _buildNetworkFee(
+      gasPrice: gasPrice,
+      maxGas: maxGas,
+    );
+    return _executor.callPermit(
+      privateKey: privateKey,
+      tokenAddress: token.contractAddress!,
+      spenderAddress: spenderAddress,
+      rpcUrl: rpcUrl,
+      chainId: chainId,
+      chainSymbol: _resolveNativeSymbol(chainId),
+      fee: fee,
+    );
+  }
+
+  /// Reads the current Permit2 allowance granted to [spender] for [token].
+  ///
+  /// Queries the `allowance(owner, token, spender)` view on the Permit2 contract
+  /// and returns the approved amount as a raw [BigInt] in the token's smallest unit.
+  ///
+  /// Use this before every native ↔ token swap session to decide whether
+  /// [callPermit2] (Step 2) needs to be called again. Permit2 allowances
+  /// expire after 30 minutes, so a non-zero value from a previous session may
+  /// no longer be valid. A return value of [BigInt.zero] always means [callPermit2]
+  /// must be called before the Universal Router can pull tokens.
+  ///
+  /// ```dart
+  /// final allowance = await uniswap.checkPermitAllowance(token: usdc, ownerAddress: myAddress);
+  /// if (allowance == BigInt.zero) {
+  ///   final gas = await uniswap.estimatePermit2Call(token: usdc, privateKey: myKey);
+  ///   await uniswap.callPermit2(token: usdc, privateKey: myKey, maxGas: gas.toInt());
+  /// }
+  /// ```
+  ///
+  /// [token] - The ERC-20 token to query.
+  /// [ownerAddress] - The wallet address whose allowance is being read.
+  /// [spender] - Optional spender address. Defaults to the Universal Router.
+  ///
+  /// Returns the Permit2-approved amount in the token's smallest unit.
+  /// [BigInt.zero] means no active allowance — [callPermit2] is required.
+  Future<Allowance> getPermitAllowance({
+    required Token token,
+    required String ownerAddress,
+    String? spender,
+  }) async {
+    final spenderAddress = spender ?? _executor.getUniversalRouterAddress(chainId: chainId);
+    return _executor.getPermitAllowance(
+      ownerAddress: ownerAddress,
+      tokenAddress: token.contractAddress!,
+      spenderAddress: spenderAddress,
+      rpcUrl: rpcUrl,
+      chainId: chainId,
     );
   }
 
@@ -513,13 +706,23 @@ class UniswapV3 {
     );
   }
 
-  /// Grants Permit2 allowance over an ERC-20 token.
+  /// Executes the ERC-20 → Permit2 approval (Permit2 Step 1).
   ///
-  /// Required before native-to-token or token-to-native swaps routed through
-  /// the Universal Router (which uses Uniswap's Permit2 contract).
+  /// Sends a standard ERC-20 `approve` transaction granting the **Permit2
+  /// contract** the right to transfer [token] from the wallet. This is a
+  /// prerequisite for [callPermit2] (Step 2) and only needs to be done once
+  /// per token (or once with an unlimited amount).
   ///
-  /// [token] - The ERC-20 token to approve.
-  /// [amount] - Human-readable amount. Pass [double.infinity] for unlimited.
+  /// This method does **not** interact with the Universal Router directly;
+  /// it solely authorises the Permit2 contract at the ERC-20 level. See
+  /// [callPermit2] for the second step that registers the Universal Router
+  /// inside Permit2's internal ledger.
+  ///
+  /// See the class-level documentation for the full Permit2 approval flow.
+  ///
+  /// [token] - The ERC-20 token to approve for Permit2.
+  /// [amount] - Human-readable amount. Pass [double.infinity] for an unlimited
+  ///            (max uint256) approval so this step never needs repeating.
   /// [privateKey] - The wallet's private key.
   /// [gasPrice] - Optional gas price in wei. If omitted, fetched from the network.
   /// [maxGas] - Required max gas limit. Use [estimatePermit2Approval] to compute a value.
@@ -686,10 +889,7 @@ class UniswapV3 {
         return 'BSC';
       case 137:
         return 'Polygon';
-      case 42161:
-        return 'Arbitrum';
-      case 43114:
-        return 'Avalanche';
+
       default:
         return 'Chain $chainId';
     }
@@ -705,12 +905,12 @@ class UniswapV3 {
         return 'BNB';
       case 137:
         return 'POL';
-      case 43114:
-        return 'AVAX';
+
       default:
         return 'ETH';
     }
   }
+
 
   //Change back or reverse the token if the pool indicate inverse
   //So  that the executor maintain the trading path, this is because the graph can return the pool in the wrong order as the user intends

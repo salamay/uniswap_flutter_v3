@@ -9,6 +9,7 @@ export 'uniswap/domain/entities/pool.dart';
 export 'uniswap/domain/entities/network_rpc.dart';
 export 'uniswap/domain/entities/network_fee.dart';
 export 'uniswap/domain/entities/transaction_status.dart';
+export 'uniswap/domain/entities/allowance.dart';
 
 // Advanced / low-level API
 export 'uniswap/domain/repositories/SwapRepository.dart';

@@ -127,14 +127,14 @@ exists.
 ## Token → Token Swap
 
 ```dart
-final pool = await bsc.getPool(tokenA: usdc, tokenB: dai);
+final pool = await bsc.getPool(tokenA: dai, tokenB: usdt);
 
-// 1. Approve the SwapRouter to spend USDC.
+// 1. Approve the SwapRouter to spend DAI.
 final approveGas = await bsc.estimateApproval(
-  token: usdc, amount: 1, privateKey: key,
+  token: dai, amount: 1, privateKey: key,
 );
 final approveHash = await bsc.approveToken(
-  token: usdc,
+  token: dai,
   amount: 1,
   privateKey: key,
   maxGas: approveGas.toInt(),
@@ -150,7 +150,7 @@ final swapGas = await bsc.estimateTokenToTokenSwap(
 final swapHash = await bsc.swapTokenToToken(
   privateKey: key,
   pool: pool,
-  amountIn: 1,           // 1 USDC (human-readable)
+  amountIn: 1,           // 1 DAI (human-readable)
   slippagePercent: 1,    // 1% tolerance
   maxGas: swapGas.toInt(),
 );
@@ -164,13 +164,13 @@ Token → native swaps go through Uniswap's Universal Router and therefore
 require a **Permit2** allowance (not a regular ERC-20 approval):
 
 ```dart
-final pool = await bsc.getPool(tokenA: usdc, tokenB: wbnb);
+final pool = await bsc.getPool(tokenA: usdt, tokenB: wbnb);
 
 final permit2Gas = await bsc.estimatePermit2Approval(
-  token: usdc, amount: 1, privateKey: key,
+  token: usdt, amount: 1, privateKey: key,
 );
 final approveHash = await bsc.approveUniswapPermit2(
-  token: usdc,
+  token: usdt,
   amount: 1,
   privateKey: key,
   maxGas: permit2Gas.toInt(),

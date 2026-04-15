@@ -8,6 +8,7 @@ import 'package:uniswap_flutter_v3/uniswap/domain/entities/pool.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/token.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/repositories/SwapRepository.dart';
 
+import '../../domain/entities/allowance.dart';
 import '../../domain/entities/transaction_status.dart';
 
 class SwapExecutor extends SwapRepository {
@@ -66,6 +67,29 @@ class SwapExecutor extends SwapRepository {
   Future<BigInt> estimatePermit2Approval({required Token token,required  NetworkRpc network, required double amountIn, required String privateKey}) async {
     // TODO: implement estimateApproveTx
     return swapService.estimateApproveTx(token: token, network: network, amountIn: amountIn, privateKey: privateKey);
+  }
+
+
+  @override
+  Future<BigInt> estimatePermit2Call(
+      {required String privateKey,
+      required String tokenAddress,
+      required String spenderAddress,
+      required String rpcUrl,
+      required int chainId
+      }) {
+    return swapService.estimatePermit2Call(privateKey: privateKey, tokenAddress: tokenAddress, spenderAddress: spenderAddress, rpcUrl: rpcUrl, chainId: chainId);
+  }
+
+
+  @override
+  Future<Allowance> getPermitAllowance(
+      {required String ownerAddress,
+      required String tokenAddress,
+      required String spenderAddress,
+      required String rpcUrl,
+        required int chainId}) {
+    return swapService.getPermitAllowance(ownerAddress: ownerAddress, tokenAddress: tokenAddress, spenderAddress: spenderAddress, rpcUrl: rpcUrl, chainId: chainId);
   }
 
   @override
@@ -152,6 +176,15 @@ class SwapExecutor extends SwapRepository {
     return swapService.nativeToTokenSwap(privateKey: privateKey, pool: pool, amountIn: amountIn, wethAmountMin: wethAmountMin, poolFee: poolFee, fee: fee, network: network);
   }
 
-
-
+  @override
+  Future<String> callPermit(
+      {required String privateKey,
+      required String tokenAddress,
+      required String spenderAddress,
+      required String rpcUrl,
+      required int chainId,
+      required String chainSymbol,
+      required NetworkFee fee}) {
+    return swapService.callPermit(privateKey: privateKey, tokenAddress: tokenAddress, spenderAddress: spenderAddress, rpcUrl: rpcUrl, chainId: chainId, chainSymbol: chainSymbol, fee: fee);
+  }
 }

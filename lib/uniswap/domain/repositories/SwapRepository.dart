@@ -3,6 +3,7 @@ import 'package:uniswap_flutter_v3/uniswap/domain/entities/pool.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/token.dart';
 
 import '../../utils/constants/constants.dart';
+import '../entities/allowance.dart';
 import '../entities/network_fee.dart';
 import '../entities/network_rpc.dart';
 import '../entities/transaction_status.dart';
@@ -27,11 +28,14 @@ abstract class SwapRepository {
   Future<BigInt> getChainNetworkFee({required String rpcUrl,required int chainId});
   Future<BigInt> estimateApproveTx({required Token from,required  NetworkRpc network, required double amountIn, required String privateKey});
   Future<BigInt> estimatePermit2Approval({required Token token,required  NetworkRpc network, required double amountIn, required String privateKey});
-    Future<BigInt> estimateSwapTx({required String privateKey, required String fromAddress, required BigInt poolFee, required Pool pair, required BigInt amountIn, required NetworkRpc network});
+  Future<BigInt> estimatePermit2Call({required String privateKey, required String tokenAddress, required String spenderAddress, required String rpcUrl, required int chainId});
+  Future<BigInt> estimateSwapTx({required String privateKey, required String fromAddress, required BigInt poolFee, required Pool pair, required BigInt amountIn, required NetworkRpc network});
   Future<BigInt> estimateTokenToNativeSwapTx({ required String privateKey,required Pool pool, required NetworkRpc network,required BigInt amountIn,required BigInt wethAmountMin, required BigInt poolFee});
   Future<BigInt> estimateNativeToTokenSwapTx({required String privateKey,required Pool pool,required BigInt amountIn, required BigInt amountOutMin, required BigInt poolFee,required NetworkRpc network});
 
-  Future<String> approve({required String privateKey, required String spender, required  Token token, required BigInt amountIn, required NetworkRpc network,required NetworkFee fee});
+  Future<String> callPermit({required String privateKey, required String tokenAddress, required String spenderAddress, required String rpcUrl, required int chainId, required String chainSymbol, required NetworkFee fee});
+  Future<Allowance> getPermitAllowance({required String ownerAddress, required String tokenAddress, required String spenderAddress, required String rpcUrl, required int chainId});
+    Future<String> approve({required String privateKey, required String spender, required  Token token, required BigInt amountIn, required NetworkRpc network,required NetworkFee fee});
   Future<String> swap({required String privateKey,required BigInt poolFee, required Pool pair, required BigInt amountIn, required BigInt amountOutMin, required NetworkFee fee,required NetworkRpc network});
   Future<String> tokenToNativeSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt wethAmountMin,required NetworkRpc network,required NetworkFee fee, required BigInt poolFee});
   Future<String> nativeToTokenSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt wethAmountMin, required BigInt poolFee,required NetworkFee fee,required NetworkRpc network});

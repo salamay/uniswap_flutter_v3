@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:uniswap_flutter_v3/uniswap/data/datasources/services/transaction_service.dart';
+import 'package:uniswap_flutter_v3/uniswap/domain/entities/allowance.dart';
 
 import 'package:uniswap_flutter_v3/uniswap/utils/token_factory.dart';
 import 'package:web3dart/web3dart.dart';
@@ -91,12 +92,12 @@ class SwapService {
       try {
         return await transactionService.waitForTransactionConfirmation(txHash: txHash, rpcUrl: rpcUrl, maxWaitTime: maxWaitTime, pollInterval: pollInterval);
       }catch (e){
-        logger(e.toString(),"SwapService");
+        logger(e.toString(),runtimeType.toString());
         rethrow;
       }
     }
     Future<BigInt> getPoolFee({required Pool pool, required NetworkRpc network, required String poolAbi}) async {
-      logger("Swap: Getting pool fee $pool.","SwapService");
+      logger("Swap: Getting pool fee $pool.",runtimeType.toString());
       try {
         TokenFactory tokenFactory = TokenFactory();
         int chainId = network.chainId;
@@ -106,9 +107,6 @@ class SwapService {
         Token tokenOut = pool.token1;
         String poolAddress = pool.poolAddress;
         DeployedContract poolContract = await tokenFactory.intContract(poolAbi, poolAddress, tokenIn.symbol);
-        logger("Swap: pool: Setting up contract",runtimeType.toString());
-        logger("Swap: pool: Pool contract abi loaded",runtimeType.toString());
-        logger("Swap: pool: Calling fee function",runtimeType.toString());
         final balanceFunction = poolContract.function('fee');
         final balance = await web3client.call(contract: poolContract, function: balanceFunction, params: []);
         BigInt amount = balance.first;
@@ -124,7 +122,6 @@ class SwapService {
       logger("Getting pool for ${token0.contractAddress} and ${token1.contractAddress}", runtimeType.toString());
       final link = getGraphUrl(apiKey: graphApiKey, chainId: chainId);
       if (link == null) throw Exception('Unsupported chain ID $chainId for The Graph');
-      logger("Swap: Getting pool for $chainId", runtimeType.toString());
       final HttpLink httpLink = HttpLink(link);
       final client = GraphQLClient(
         link: httpLink,
@@ -253,7 +250,7 @@ class SwapService {
         BigInt gas = await transactionService.estimateTxGas(sender: credentials.address.with0x, to: token.contractAddress, rpcUrl: rpcUrl, data: tx.data!);
         return gas;
       } catch (e) {
-        logger(e.toString(),"SwapService");
+        logger(e.toString(),runtimeType.toString());
         rethrow;
       }
     }
@@ -273,7 +270,7 @@ class SwapService {
         BigInt gas = await transactionService.estimateTxGas(sender: credentials.address.with0x, to: token.contractAddress, rpcUrl: rpcUrl, data: tx.data!);
         return gas;
       } catch (e) {
-        logger(e.toString(),"SwapService");
+        logger(e.toString(),runtimeType.toString());
         rethrow;
       }
     }
@@ -293,21 +290,21 @@ class SwapService {
       List<dynamic> params = [
         [EthereumAddress.fromHex(pair.token0.contractAddress!), EthereumAddress.fromHex(pair.token1.contractAddress), poolFee, EthereumAddress.fromHex(fromAddress), amountIn, BigInt.zero, BigInt.zero],
       ];
-      logger(params.toString(),"SwapService");
+      logger(params.toString(),runtimeType.toString());
       Transaction tx = await transactionService.constructTx(contract: contract, function: exactInputSingle, credentials: credentials, params: params);
       BigInt gas = await transactionService.estimateTxGas(sender: fromAddress, to: routerAddress, rpcUrl: rpcUrl, data: tx.data!);
       return gas;
     } catch (e) {
-      logger(e.toString(),"SwapService");
+      logger(e.toString(),runtimeType.toString());
       throw Exception("Could not get gas");
     }
   }
 
   Future<BigInt> estimateTokenToNativeSwapTx({ required String privateKey,required Pool pool, required NetworkRpc network,required BigInt amountIn,required BigInt wethAmountMin, required BigInt poolFee}) async {
     try {
-      logger("Estimating token to native swap tx from ${pool.token0.symbol} to ${pool.token1.symbol}","SwapService");
-      logger("Amount In: $amountIn","SwapService");
-      logger("Amount Out Min: $wethAmountMin","SwapService");
+      logger("Estimating token to native swap tx from ${pool.token0.symbol} to ${pool.token1.symbol}",runtimeType.toString());
+      logger("Amount In: $amountIn",runtimeType.toString());
+      logger("Amount Out Min: $wethAmountMin",runtimeType.toString());
       TokenFactory _tokenFactory = TokenFactory();
       Token pairOne = pool.token0;
       // SupportedCoin pairTwo = pair.token1;
@@ -340,12 +337,12 @@ class SwapService {
       // }
       //This encode the path and fees then pad it to 64
       String encodedPath = MyEncoder.encodePath(path: path, fees: poolFees).padLeft(64, "0");
-      logger("Path:$path","SwapService");
+      logger("Path:$path",runtimeType.toString());
       //The recipient in the case of uniswap, 2 indicate the address of the contract and 1 indicate the MSG.SENDER
       String recipientMsgSender = 1.toRadixString(16).padLeft(40, "0");
       String recipientContract = 2.toRadixString(16).padLeft(40, "0");
-      logger("Recipient (msg.sender): $recipientMsgSender","SwapService");
-      logger("Recipient (Contract): $recipientContract","SwapService");
+      logger("Recipient (msg.sender): $recipientMsgSender",runtimeType.toString());
+      logger("Recipient (Contract): $recipientContract",runtimeType.toString());
       // flag for whether the input tokens should come from the msg.sender (through Permit2) or whether the funds are already in the UniversalRouter
       int flag = 1;
       final v3SwapExactInputParams = [EthereumAddress.fromHex("0x$recipientMsgSender"), amountIn, wethAmountMin, hexToBytes("0x$encodedPath"), EthereumAddress.fromHex("0x${flag.toRadixString(16).padLeft(40, "0")}")];
@@ -362,7 +359,7 @@ class SwapService {
       BigInt gas = await transactionService.estimateTxGas(sender: walletAddress!, to: universalRouter, rpcUrl: rpcUrl, data: tx.data!);
       return gas;
     } catch (e) {
-      logger(e.toString(),"SwapService");
+      logger(e.toString(),runtimeType.toString());
       throw Exception(e);
     }
   }
@@ -401,13 +398,12 @@ class SwapService {
       // }
       //This encode the path and fees then pad it to 64
       String encodedPath = MyEncoder.encodePath(path: path, fees: poolFees).padLeft(64, "0");
-      logger("Encoded Path:$encodedPath","SwapService");
+      logger("Encoded Path:$encodedPath",runtimeType.toString());
       //The recipient in the case of uniswap, 2 indicate the address of the contract and 1 indicate the MSG.SENDER
       String ethAddress = 0.toRadixString(16).padLeft(40, "0");
       String recipientMsgSender = 1.toRadixString(16).padLeft(40, "0");
       String recipientContract = 2.toRadixString(16).padLeft(40, "0");
-      logger("Recipient (msg.sender): $recipientMsgSender","SwapService");
-      logger("Recipient (Contract): $recipientContract","SwapService");
+
       // flag for whether the input tokens should come from the msg.sender (through Permit2) or whether the funds are already in the UniversalRouter
       int flag = 0;
       final v3wrapETHInputParams = [EthereumAddress.fromHex("0x$recipientContract"), amountIn];
@@ -426,18 +422,92 @@ class SwapService {
       BigInt gas = await transactionService.estimateTxGas(sender: walletAddress, to: universalRouter, rpcUrl: rpcUrl, data: tx.data!, value: EtherAmount.fromBigInt(EtherUnit.wei, amountIn));
       return gas;
     } catch (e) {
-      logger(e.toString(),"SwapService");
+      logger(e.toString(),runtimeType.toString());
       throw Exception("Could not get execute gas");
     }
   }
 
+    Future<BigInt> estimatePermit2Call({required String privateKey, required String tokenAddress, required String spenderAddress, required String rpcUrl, required int chainId}) async {
+      try {
+        logger("Estimating call permit for $tokenAddress on $spenderAddress",runtimeType.toString());
+        logger("Amount In: $permitUnlimited", runtimeType.toString());
+        TokenFactory tokenFactory = TokenFactory();
+        final String permit2Abi = await rootBundle.loadString(permit2_abi);
+        final contract = await tokenFactory.intContract(permit2Abi, permit2ContractAddress, "Permit2");
+        final permitFunction = contract.findFunctionsByName('approve').last;
+        final credentials = await tokenFactory.getCredentials(privateKey);
+        String walletAddress = credentials.address.with0x;
+        BigInt amountIn = permitUnlimited;
+        BigInt deadline = BigInt.from(DateTime.now().add(const Duration(minutes: 30)).millisecondsSinceEpoch);
+        List<dynamic> param = [EthereumAddress.fromHex(tokenAddress), EthereumAddress.fromHex(spenderAddress), amountIn, deadline];
+        Transaction tx = await transactionService.constructTx(contract: contract, function: permitFunction, credentials: credentials, params: param);
+        BigInt gas = await transactionService.estimateTxGas(sender: walletAddress, to: permit2ContractAddress, rpcUrl: rpcUrl, data: tx.data!);
+        return gas;
+      } catch (e) {
+        logger(e.toString(), runtimeType.toString());
+        throw Exception(e);
+      }
+    }
+    Future<String> callPermit({required String privateKey, required String tokenAddress, required String spenderAddress, required String rpcUrl, required int chainId, required String chainSymbol, required NetworkFee fee}) async {
+      try {
+        logger("Calling permit for $tokenAddress on $spenderAddress to spend $permitUnlimited with deadline 30 minutes",runtimeType.toString());
+        logger("Token Address: $tokenAddress", runtimeType.toString());
+        logger("Spender Address: $spenderAddress", runtimeType.toString());
+        logger("Amount In: $permitUnlimited", runtimeType.toString());
+        TokenFactory tokenFactory = TokenFactory();
+        Web3Client web3client = await ClientResolver.resolveClient(rpcUrl: rpcUrl);
+        final String permit2Abi = await rootBundle.loadString(permit2_abi);
+        final contract = await tokenFactory.intContract(permit2Abi, permit2ContractAddress, "Permit2");
+        final permitFunction = contract.findFunctionsByName('approve').last;
+        final credentials = await tokenFactory.getCredentials(privateKey);
+        BigInt amountIn = permitUnlimited;
+        final gasPrice = EtherAmount.inWei(fee.gasPrice);
+        final maxGas = fee.maxGas;
+        BigInt deadline = BigInt.from(DateTime.now().add(const Duration(minutes: 30)).millisecondsSinceEpoch);
+        List<dynamic> param = [EthereumAddress.fromHex(tokenAddress), EthereumAddress.fromHex(spenderAddress), amountIn, deadline];
+        Transaction tx = await transactionService.constructTx(contract: contract, function: permitFunction, credentials: credentials, params: param, gasPrice: gasPrice, maxGas: maxGas);
+        Uint8List signedTransaction = await web3client.signTransaction(credentials, tx, chainId: chainId, fetchChainIdFromNetworkId: false);
+        String txId = await web3client.sendRawTransaction(signedTransaction);
+        logger("Permit2 txId: $txId", runtimeType.toString());
+        return txId;
+      } catch (e) {
+        logger(e.toString(), runtimeType.toString());
+        throw Exception(e);
+      }
+    }
+
+     Future<Allowance> getPermitAllowance({required String ownerAddress, required String tokenAddress, required String spenderAddress, required String rpcUrl, required int chainId}) async {
+      try {
+        logger("Checking allowance for $spenderAddress on $tokenAddress", runtimeType.toString());
+        Web3Client web3client = await ClientResolver.resolveClient(rpcUrl: rpcUrl);
+        TokenFactory tokenFactory = TokenFactory();
+        final String permit2Abi = await rootBundle.loadString(permit2_abi);
+        final contract = await tokenFactory.intContract(permit2Abi, permit2ContractAddress, "Permit2");
+        final permitFunction = contract.function('allowance');
+        List<dynamic> param = [
+          EthereumAddress.fromHex(ownerAddress),
+          EthereumAddress.fromHex(tokenAddress),
+          EthereumAddress.fromHex(spenderAddress)
+        ];
+        final result = await web3client.call(
+            contract: contract, function: permitFunction, params: param);
+        BigInt amount = result[0];
+        BigInt expiration = result[1];
+        BigInt nonce = result[2];
+        logger("Allowance: $amount, expiration: $expiration, nonce: $nonce", runtimeType.toString());
+        return Allowance(amount: amount, expiration: expiration, nonce: nonce);
+      } catch (e) {
+        logger(e.toString(), runtimeType.toString());
+        throw Exception("Unable to check allowance");
+      }
+    }
     Future<String> swap({required String privateKey,required BigInt poolFee, required Pool pair, required BigInt amountIn, required BigInt amountOutMin, required NetworkFee fee,required NetworkRpc network}) async {
       Token from = pair.token0;
       try {
-        logger("Amount In: $amountIn","SwapService");
-        logger("Amount Out Min: $amountOutMin","SwapService");
-        logger("Pool Fee: $poolFee","SwapService");
-        logger("Pair: $pair","SwapService");
+        logger("Amount In: $amountIn",runtimeType.toString());
+        logger("Amount Out Min: $amountOutMin",runtimeType.toString());
+        logger("Pool Fee: $poolFee",runtimeType.toString());
+        logger("Pair: $pair",runtimeType.toString());
         String rpcUrl = network.rpcUrl;
         int chainId = network.chainId;
         TokenFactory _tokenFactory = TokenFactory();
@@ -456,17 +526,17 @@ class SwapService {
         Transaction tx = await transactionService.constructTx(contract: contract, function: exactInputSingle, credentials: credentials, params: params, gasPrice: gasPrice, maxGas: maxGas);
         Uint8List signedTransaction = await web3client.signTransaction(credentials, tx, chainId: chainId, fetchChainIdFromNetworkId: false);
         String txId = await web3client.sendRawTransaction(signedTransaction);
-        logger("TxId: $txId","SwapService");
+        logger("TxId: $txId",runtimeType.toString());
         return txId;
       } catch (e) {
-        logger(e.toString(),"SwapService");
+        logger(e.toString(),runtimeType.toString());
         throw Exception("Unable to swap ${from.name} to ${pair.token1.name}");
       }
     }
 
     Future<String> tokenToNativeSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt wethAmountMin,required NetworkRpc network,required NetworkFee fee, required BigInt poolFee}) async {
       try {
-        logger("Token to Native","SwapService");
+        logger("Token to Native",runtimeType.toString());
         TokenFactory _tokenFactory = TokenFactory();
         Token pairOne = pool.token0;
         String wethAddress = getWETHContractAddress(chainId: network.chainId);
@@ -499,12 +569,10 @@ class SwapService {
         // }
         //This encode the path and fees then pad it to 64
         String encodedPath = MyEncoder.encodePath(path: path, fees: poolFees).padLeft(64, "0");
-        logger("Encoded Path:$encodedPath","SwapService");
+        logger("Encoded Path:$encodedPath",runtimeType.toString());
         //The recipient in the case of uniswap, 2 indicate the address of the contract and 1 indicate the MSG.SENDER
         String recipientMsgSender = 1.toRadixString(16).padLeft(40, "0");
         String recipientContract = 2.toRadixString(16).padLeft(40, "0");
-        logger("Recipient (msg.sender): $recipientMsgSender","SwapService");
-        logger("Recipient (Contract): $recipientContract","SwapService");
         // flag for whether the input tokens should come from the msg.sender (through Permit2) or whether the funds are already in the UniversalRouter
         int flag = 1;
         final v3SwapExactInputParams = [EthereumAddress.fromHex(recipientContract), amountIn, wethAmountMin, hexToBytes("0x$encodedPath"), EthereumAddress.fromHex("0x${flag.toRadixString(16).padLeft(40, "0")}")];
@@ -524,17 +592,17 @@ class SwapService {
         Transaction tx = await transactionService.constructTx(contract: contract, function: execute, credentials: credentials, params: executeParams, gasPrice: gasPrice, maxGas: maxGas);
         Uint8List signedTransaction = await web3client.signTransaction(credentials, tx, chainId: chainId, fetchChainIdFromNetworkId: false);
         String txId = await web3client.sendRawTransaction(signedTransaction);
-        logger("TxId: $txId","SwapService");
+        logger("TxId: $txId",runtimeType.toString());
         return txId;
       } catch (e) {
-        logger(e.toString(),"SwapService");
+        logger(e.toString(),runtimeType.toString());
         rethrow;
       }
     }
 
     Future<String> nativeToTokenSwap({required String privateKey,required Pool pool, required BigInt amountIn, required BigInt wethAmountMin, required BigInt poolFee,required NetworkFee fee,required NetworkRpc network}) async {
       try {
-        logger("Native to token","SwapService");
+        logger("Native to token",runtimeType.toString());
         TokenFactory _tokenFactory = TokenFactory();
         Token pairOne = pool.token0;
         Token pairTwo = pool.token1;
@@ -567,13 +635,11 @@ class SwapService {
         // }
         //This encode the path and fees then pad it to 64
         String encodedPath = MyEncoder.encodePath(path: path, fees: poolFees).padLeft(64, "0");
-        logger("Encoded Path:$encodedPath","SwapService");
+        logger("Encoded Path:$encodedPath",runtimeType.toString());
         //The recipient in the case of uniswap, 2 indicate the address of the contract and 1 indicate the MSG.SENDER
         String ethAddress = 0.toRadixString(16).padLeft(40, "0");
         String recipientMsgSender = 1.toRadixString(16).padLeft(40, "0");
         String recipientContract = 2.toRadixString(16).padLeft(40, "0");
-        logger("Recipient (msg.sender): $recipientMsgSender","SwapService");
-        logger("Recipient (Contract): $recipientContract","SwapService");
         // flag for whether the input tokens should come from the msg.sender (through Permit2) or whether the funds are already in the UniversalRouter
         int flag = 0;
         final v3wrapETHInputParams = [EthereumAddress.fromHex("0x$recipientContract"), amountIn];
@@ -594,10 +660,10 @@ class SwapService {
         Transaction tx = await transactionService.constructTx(contract: contract, function: execute, credentials: credentials, params: executeParams, gasPrice: gasPrice, maxGas: maxGas, value: EtherAmount.fromBigInt(EtherUnit.wei, amountIn));
         Uint8List signedTransaction = await web3client.signTransaction(credentials, tx, chainId: chainId, fetchChainIdFromNetworkId: false);
         String txId = await web3client.sendRawTransaction(signedTransaction);
-        logger("TxId: $txId","SwapService");
+        logger("TxId: $txId",runtimeType.toString());
         return txId;
       } catch (e) {
-        logger(e.toString(),"SwapService");
+        logger(e.toString(),runtimeType.toString());
         rethrow;
       }
     }
@@ -605,7 +671,7 @@ class SwapService {
 
     Future<Uint8List> encodeV3SwapExactInput({required List<dynamic> param, required String address}) async {
     try {
-      logger("////////////////////////////////////////encodeV3SwapExactInput////////////////////////////////////////", "SwapService");
+      logger("////////////////////////////////////////encodeV3SwapExactInput////////////////////////////////////////", runtimeType.toString());
       TokenFactory _tokenFactory = TokenFactory();
       //The encoded data for the swap, we use the v3SwapRouter json to encode the function with web3Dart
       String v3SwapRouter = await rootBundle.loadString(v3_swap_router_abi);
@@ -616,19 +682,15 @@ class SwapService {
       final d = bytesToHex(data);
       //This is to the function selected which is the first 4 bytes e.g 0x12345678
       final dd = hexToBytes(d.substring(8));
-      logger(bytesToHex(dd), "SwapService");
-      logger("////////////////////////////////////////encodeV3SwapExactInput////////////////////////////////////////", "SwapService");
       return dd;
     } catch (e) {
-      logger(e.toString(), "SwapService");
+      logger(e.toString(), runtimeType.toString());
       throw Exception("Could not encode V3SwapExactInput param");
     }
   }
 
   Future<Uint8List> encodeWrapWETH({required List<dynamic> param, required String address}) async {
     try {
-      logger("////////////////////////////////////////encodeWrapWETH////////////////////////////////////////",runtimeType.toString());
-
       //The encoded data for the swap, we use the v3SwapRouter json to encode the function with web3Dart
       String paymentAbi = await getUniswapPaymentAbi();
       TokenFactory _tokenFactory = TokenFactory();
@@ -639,18 +701,15 @@ class SwapService {
       final d = bytesToHex(data);
       //This is to the function selected which is the first 4 bytes e.g 0x12345678
       final dd = hexToBytes(d.substring(8));
-      logger(bytesToHex(dd),"SwapService");
-      logger("////////////////////////////////////////encodeWrapWETH////////////////////////////////////////","SwapService");
       return dd;
     } catch (e) {
-      logger(e.toString(),"SwapService");
+      logger(e.toString(),runtimeType.toString());
       throw Exception("Could not encode encodeWrapWETH param");
     }
   }
 
   Future<Uint8List> encodeUnwrapWETH({required List<dynamic> param, required String address}) async {
     try {
-      logger("////////////////////////////////////////encodeUnwrapWETH////////////////////////////////////////","SwapService");
       TokenFactory _tokenFactory = TokenFactory();
       //The encoded data for the swap, we use the v3SwapRouter json to encode the function with web3Dart
       String paymentAbi = await getUniswapPaymentAbi();
@@ -661,11 +720,9 @@ class SwapService {
       final d = bytesToHex(data);
       //This is to the function selected which is the first 4 bytes e.g 0x12345678
       final dd = hexToBytes(d.substring(8));
-      logger(bytesToHex(dd),"SwapService");
-      logger("////////////////////////////////////////encodeUnwrapWETH////////////////////////////////////////","SwapService");
       return dd;
     } catch (e) {
-      logger(e.toString(),"SwapService");
+      logger(e.toString(),runtimeType.toString());
       throw Exception("Could not encode unwrapWETH9 param");
     }
   }
@@ -673,7 +730,6 @@ class SwapService {
 
   Future<Uint8List> encodeSweepETH({required List<dynamic> param, required String address}) async {
     try {
-      logger("////////////////////////////////////////sweepETH////////////////////////////////////////","SwapService");
       TokenFactory _tokenFactory = TokenFactory();
       //The encoded data for the swap, we use the v3SwapRouter json to encode the function with web3Dart
       String paymentAbi = await getUniswapPaymentAbi();
@@ -684,11 +740,9 @@ class SwapService {
       final d = bytesToHex(data);
       //This is to the function selected which is the first 4 bytes e.g 0x12345678
       final dd = hexToBytes(d.substring(8));
-      logger(bytesToHex(dd),"SwapService");
-      logger("////////////////////////////////////////sweepETH////////////////////////////////////////","SwapService");
       return dd;
     } catch (e) {
-      logger(e.toString(),"SwapService");
+      logger(e.toString(),runtimeType.toString());
       throw Exception("Could not encode sweepETH param");
     }
   }

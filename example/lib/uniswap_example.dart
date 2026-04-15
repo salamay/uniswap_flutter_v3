@@ -5,6 +5,8 @@
 /// use in your own Flutter app.
 library;
 
+import 'package:uniswap_flutter_v3/uniswap/domain/entities/allowance.dart';
+import 'package:uniswap_flutter_v3/uniswap/utils/logger.dart';
 import 'package:uniswap_flutter_v3/uniswap_flutter_v3.dart';
 
 // ---------------------------------------------------------------------------
@@ -97,21 +99,21 @@ void tokenToTokenSwapExample() async{
   String rpcUrl="https://bsc-dataseed.binance.org";
   int chainId=56;
   String p =   "PrivateKey";
-  final usdc = Token(
-    name: 'USD Coin',
-    symbol: 'USDC',
-    contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-    decimals: 18,
-  );
-
   final dai = Token(
-    name: 'Dai Stablecoin',
+    name: 'DAI',
     symbol: 'DAI',
     contractAddress: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3',
     decimals: 18,
   );
 
-  final pool = await bscUniswap.getPool(tokenA: usdc, tokenB: dai);
+  final usdt = Token(
+    name: 'Tether',
+    symbol: 'USDT',
+    contractAddress: '0x55d398326f99059fF775485246999027B3197955',
+    decimals: 18,
+  );
+
+  final pool = await bscUniswap.getPool(tokenA: dai, tokenB: usdt);
   if (pool == null) {
     print('No pool found for');
     return;
@@ -120,18 +122,16 @@ void tokenToTokenSwapExample() async{
   print('Fee tier: ${pool.feeTier}');
   print('token0Price price: ${pool.token0Price}');
   print('token1Price price: ${pool.token1Price}');
-  print('Liquidity: ${pool.liquidity}');
   BigInt? gasPrice=await bscUniswap.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
 
   BigInt approveGas=await bscUniswap.estimateApproval(
-    token: usdc,
+    token: dai,
     amount: 1,
     privateKey: p,
   );
-
-  // Approve first
+  // Approve universal router to spend dai
   String approveHash=await bscUniswap.approveToken(
-      token: usdc,
+      token: dai,
       amount: 1,
       privateKey: p,
       maxGas: approveGas.toInt(),
@@ -140,21 +140,23 @@ void tokenToTokenSwapExample() async{
   print('Approve hash: $approveHash');
   TransactionStatus status=await bscUniswap.waitForTransaction(approveHash,30);
   print('Approve status: $status');
+
   // Estimate gas for a token-to-token swap
   final gas = await bscUniswap.estimateTokenToTokenSwap(
     pool: pool,
-    amountIn: 1, // 1 USDC — human-readable!
+    amountIn: 1, // 100 USDC — human-readable!
     privateKey: p,
   );
   print('Estimated gas: $gas wei');
   String swapHash=await bscUniswap.swapTokenToToken(
       pool: pool,
-      amountIn: 1, // 100 USDC — human-readable!
+      amountIn: 1, // 1 USDC — human-readable!
       privateKey: p,
       gasPrice: gasPrice,
       maxGas: gas.toInt()
   );
   print('Swap hash: $swapHash');
+
 
 }
 
@@ -166,15 +168,11 @@ void tokenToNativeExample() async{
   String rpcUrl="https://bsc-dataseed.binance.org";
   int chainId=56;
   String p =   "PrivateKey";
-  final bscUniswap = UniswapV3(
-    rpcUrl: rpcUrl,
-    chainId: chainId, // BSC
-    graphApiKey: '7e8b89f52322d9cdf2d03b3c2d135400',
-  );
-  final usdc = Token(
-    name: 'USD Coin',
-    symbol: 'USDC',
-    contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+  String walletAddress =   "Wallet address";
+  final usdt = Token(
+    name: 'Tether',
+    symbol: 'USDT',
+    contractAddress: '0x55d398326f99059fF775485246999027B3197955',
     decimals: 18,
   );
   ///For Native token, you should use WETH address
@@ -187,9 +185,9 @@ void tokenToNativeExample() async{
     decimals: 18,
   );
 
-  final pool = await bscUniswap.getPool(tokenA: usdc, tokenB: nativeToken);
+  final pool = await bscUniswap.getPool(tokenA: usdt, tokenB: nativeToken);
   if (pool == null) {
-    print('No pool found for ');
+    print('No pool found ');
     return;
   }
   print('Pool address: ${pool.poolAddress}');
@@ -198,24 +196,46 @@ void tokenToNativeExample() async{
   print('Token1  price: ${pool.token1Price}');
   print('Liquidity: ${pool.liquidity}');
   BigInt? gasPrice=await bscUniswap.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);
+  double amountIn=1;
 
-  BigInt approveGas=await bscUniswap.estimatePermit2Approval(
-    token: usdc,
-    amount: 1,
-    privateKey: p,
-  );
-
-  // Approve first
-  String approveHash=await bscUniswap.approveUniswapPermit2(
-      token: usdc,
+  //Check if permit2 has allowance to spend this token, if allowance is enough skip approval and proceed to swapping
+  Allowance allowance=await bscUniswap.getPermitAllowance(token: usdt, ownerAddress: walletAddress);
+  print('Allowance: $allowance');
+  if(allowance.amount<=BigInt.from(UniswapV3.fromWei(BigInt.from(amountIn), usdt.decimals))||!checkValidity(expiration: allowance.expiration)){
+    BigInt approveGas=await bscUniswap.estimatePermit2Approval(
+      token: usdt,
       amount: 1,
       privateKey: p,
-      maxGas: approveGas.toInt(),
-      gasPrice: gasPrice
-  );
-  print('Approve hash: $approveHash');
-  TransactionStatus status=await bscUniswap.waitForTransaction(approveHash,30);
-  print('Approve status: $status');
+    );
+    // Approve permit2 first
+    String approveHash=await bscUniswap.approveUniswapPermit2(
+        token: usdt,
+        amount: 1,
+        privateKey: p,
+        maxGas: approveGas.toInt(),
+        gasPrice: gasPrice
+    );
+    print('Approve hash: $approveHash');
+    TransactionStatus status=await bscUniswap.waitForTransaction(approveHash,30);
+    print('Approve status: $status');
+
+    // Tell permit2 to allow universal router to spend token
+    BigInt permitCallGas=await bscUniswap.estimatePermit2Call(
+      token: usdt,
+      privateKey: p,
+    );
+    String callPermitHash=await bscUniswap.callPermit2(
+        token: usdt,
+        privateKey: p,
+        maxGas: approveGas.toInt(),
+        gasPrice: gasPrice
+    );
+    print('Call permit hash: $callPermitHash');
+    TransactionStatus status2=await bscUniswap.waitForTransaction(callPermitHash,30);
+    print('Call permit status: $status2');
+
+  }
+
   // Estimate gas for a token-to-token swap
   final gas = await bscUniswap.estimateTokenToNativeSwap(
     pool: pool,
@@ -311,4 +331,14 @@ Future<void> advancedExample() async {
   // You can also access the NetworkRpc object
   final network = ethUniswap.network;
   print('Network: ${network.name}, Chain ID: ${network.chainId}');
+}
+
+bool checkValidity({required BigInt expiration}) {
+  DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(expiration.toInt());
+  DateTime now = DateTime.now();
+  if (now.isBefore(dateTime)) {
+    return true;
+  } else {
+    return false;
+  }
 }
