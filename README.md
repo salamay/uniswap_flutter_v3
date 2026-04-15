@@ -5,8 +5,7 @@ Dart API. It handles pool discovery via The Graph, gas estimation,
 ERC-20/Permit2 approvals, and token/native swaps across multiple EVM chains,
 so you can work with human-readable amounts instead of raw `BigInt` wei.
 
-Supported chains out of the box: **Ethereum (1), BSC (56), Polygon (137),
-Arbitrum (42161), Avalanche (43114)**. Any chain with a deployed Uniswap V3
+Supported chains out of the box: **Ethereum (1), BSC (56) and Polygon (137)**. Any chain with a deployed Uniswap V3
 SwapRouter02 / Universal Router can be added by extending the constants.
 
 ---
