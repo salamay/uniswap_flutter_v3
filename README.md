@@ -22,14 +22,16 @@ SwapRouter02 / Universal Router can be added by extending the constants.
 - Human-readable amounts in (`double`) and out (`BigInt`) via `toWei` / `fromWei`.
 
 ---
-
+## Features
+```bash
+Install the latest plugin starting form version 0.0.6
 ## Installation
 
 Add the plugin to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  uniswap_flutter_v3: ^0.0.1
+  uniswap_flutter_v3: ^0.0.6
 ```
 
 Then run:
