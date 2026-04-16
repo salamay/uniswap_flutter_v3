@@ -197,8 +197,9 @@ class SwapService {
           token1: token0,
           feeTier: pool.feeTier!,
           poolAddress: pool.id!,
-          token0Price: double.parse(pool.token1Price!),
-          token1Price: double.parse(pool.token0Price!),
+          //No need to swap the prices for inverse pool since we already swap the tokens
+          token0Price: double.parse(pool.token0Price!),
+          token1Price: double.parse(pool.token1Price!),
           volumeToken0: double.parse(pool.volumeToken1!),
           volumeToken1: double.parse(pool.volumeToken0!),
           volumeUsd: double.parse(pool.volumeUsd!),

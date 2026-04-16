@@ -1,6 +1,6 @@
 name: uniswap_flutter_v3
 description: "A comprehensive Dart/Flutter SDK for Uniswap V3 DEX interactions. This plugin simplifies complex token swaps, and blockchain interactions across multiple chains including Ethereum, BSC and Polygon. Built by Medeet for developers seeking seamless decentralized exchange integration."
-version: 0.0.4
+version: 0.0.5
 homepage: https://github.com/salamay/uniswap_flutter_v3
 
 
