@@ -1,3 +1,4 @@
-## 0.0.1
+## 0.0.7
 
-* TODO: Describe initial release.
+* We removed uniswap subgraph to prevent bad indexer error due to bad indexer
+
