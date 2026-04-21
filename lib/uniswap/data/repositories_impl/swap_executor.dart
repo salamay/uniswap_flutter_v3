@@ -148,8 +148,8 @@ class SwapExecutor extends SwapRepository {
   }
 
   @override
-  Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String graphApiKey}) {
-    return swapService.getPool(chainId: chainId, token0: token0, token1: token1, graphApiKey: graphApiKey);
+  Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String rpcUrl}) {
+    return swapService.getPool(chainId: chainId, token0: token0, token1: token1, rpcUrl: rpcUrl);
   }
 
   @override

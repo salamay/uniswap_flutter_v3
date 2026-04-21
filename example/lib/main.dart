@@ -13,19 +13,16 @@ import 'package:uniswap_flutter_v3/uniswap_flutter_v3.dart';
 final ethUniswap = UniswapV3(
   rpcUrl: 'https://mainnet.infura.io/v3/YOUR_INFURA_KEY',
   chainId: 1, // Ethereum Mainnet
-  graphApiKey: 'YOUR_GRAPH_API_KEY',
 );
 
 final bscUniswap = UniswapV3(
   rpcUrl: 'https://bsc-dataseed.binance.org',
   chainId: 56, // BSC
-  graphApiKey: 'YOUR_GRAPH_API_KEY',
 );
 
 final polygonUniswap = UniswapV3(
   rpcUrl: 'https://polygon-rpc.com',
   chainId: 137, // Polygon
-  graphApiKey: 'YOUR_GRAPH_API_KEY',
 );
 
 // ---------------------------------------------------------------------------
@@ -71,7 +68,8 @@ Future<void> waitForTx(String hash) async {
 
 Future<void> findPoolExample() async {
   // Automatically fetches the highest-liquidity pool from The Graph
-  final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: weth);
+  String rpcUrl="";
+  final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: weth,rpcUrl:rpcUrl);
 
   if (pool == null) {
     print('No pool found for');
@@ -108,7 +106,7 @@ void tokenToTokenSwapExample() async{
     decimals: 18,
   );
 
-  final pool = await bscUniswap.getPool(tokenA: dai, tokenB: usdt);
+  final pool = await bscUniswap.getPool(tokenA: dai, tokenB: usdt,rpcUrl:rpcUrl);
   if (pool == null) {
     print('No pool found for');
     return;
@@ -180,7 +178,7 @@ void tokenToNativeExample() async{
     decimals: 18,
   );
 
-  final pool = await bscUniswap.getPool(tokenA: usdt, tokenB: nativeToken);
+  final pool = await bscUniswap.getPool(tokenA: usdt, tokenB: nativeToken,rpcUrl:rpcUrl);
   if (pool == null) {
     print('No pool found ');
     return;
@@ -261,7 +259,6 @@ void nativeToToken() async{
   final bscUniswap = UniswapV3(
     rpcUrl: rpcUrl,
     chainId: chainId, // BSC
-    graphApiKey: '7e8b89f52322d9cdf2d03b3c2d135400',
   );
   ///For Native token, you should use WETH address
   //e.g for BNB you use WBNB, for ETH you use WETH, for MATIC you use WMATIC
@@ -278,7 +275,7 @@ void nativeToToken() async{
     decimals: 18,
   );
 
-  final pool = await bscUniswap.getPool(tokenA: nativeToken, tokenB: usdc);
+  final pool = await bscUniswap.getPool(tokenA: nativeToken, tokenB: usdc,rpcUrl:rpcUrl);
   if (pool == null) {
     print('No pool found for');
     return;

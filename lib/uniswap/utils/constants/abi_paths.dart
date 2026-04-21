@@ -5,3 +5,6 @@ const uniswap_payment_abi="packages/uniswap_flutter_v3/abi/uniswap/uniswap_payme
 const token_contract_abi="packages/uniswap_flutter_v3/abi/token/token_contract.json";
 const v3_swap_router_abi="packages/uniswap_flutter_v3/abi/uniswap/v3_swap_router.json";
 const permit2_abi="packages/uniswap_flutter_v3/abi/permit/permit2.json";
+const uniswap_v3_factory_abi="packages/uniswap_flutter_v3/abi/uniswap/uniswap_v3_factory_abi.json";
+const uniswap_v3_pool_abi="packages/uniswap_flutter_v3/abi/uniswap/uniswap_v3_pool_abi.json";
+const uniswap_v3_quoter_v2_abi="packages/uniswap_flutter_v3/abi/uniswap/uniswap_v3_quoter_v2_abi.json";

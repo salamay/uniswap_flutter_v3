@@ -1,10 +1,8 @@
-import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:uniswap_flutter_v3/uniswap/data/repositories_impl/swap_executor.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/network_fee.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/network_rpc.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/pool.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/token.dart';
-import 'package:uniswap_flutter_v3/uniswap/utils/client_resolver.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/constants/constants.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/logger.dart';
 import 'package:uniswap_flutter_v3/uniswap/utils/token_factory.dart';
@@ -18,6 +16,9 @@ import 'domain/entities/transaction_status.dart';
 /// to [BigInt], and calling different methods for different swap types,
 /// this class lets you work with human-readable amounts and a clean API.
 ///
+/// Pool discovery is performed **fully on-chain** by querying the Uniswap V3
+/// Factory and Pool contracts directly via RPC — no Graph API key needed.
+///
 /// ---
 ///
 /// ## Quick Start — Token-to-Token Swap (SwapRouter02)
@@ -26,21 +27,17 @@ import 'domain/entities/transaction_status.dart';
 /// only need a single ERC-20 approval.
 ///
 /// ```dart
-/// // 0. Initialize Hive (once, typically in main())
-/// await UniswapV3.init();
-///
 /// // 1. Create an instance
 /// final uniswap = UniswapV3(
 ///   rpcUrl: 'https://mainnet.infura.io/v3/YOUR_KEY',
 ///   chainId: 1,
-///   graphApiKey: 'YOUR_GRAPH_API_KEY',
 /// );
 ///
 /// // 2. Define tokens
 /// final usdc = Token(name: 'USD Coin', symbol: 'USDC', contractAddress: '0xA0b8...', decimals: 6);
 /// final dai  = Token(name: 'Dai',      symbol: 'DAI',  contractAddress: '0x6B17...', decimals: 18);
 ///
-/// // 3. Find the best pool
+/// // 3. Find the best pool (on-chain via Factory + Pool contracts)
 /// final pool = await uniswap.getPool(tokenA: usdc, tokenB: dai);
 ///
 /// // 4. Approve the SwapRouter02 to spend USDC (one-time per token)
@@ -125,40 +122,21 @@ class UniswapV3 {
   /// Optional human-readable network name. Defaults based on [chainId].
   final String? networkName;
 
-  /// The Graph API key for querying Uniswap subgraphs (pool discovery).
-  ///
-  /// Get your key at https://thegraph.com/studio/apikeys/
-  final String graphApiKey;
-
   late final SwapExecutor _executor;
   late final NetworkRpc _network;
   final TokenFactory _tokenFactory = TokenFactory();
 
-  /// Initializes Hive storage for `graphql_flutter` caching.
-  ///
-  /// Must be called once (typically from `main()`) before any instance of
-  /// [UniswapV3] is used to fetch pools from The Graph.
-  ///
-  /// ```dart
-  /// void main() async {
-  ///   WidgetsFlutterBinding.ensureInitialized();
-  ///   await UniswapV3.init();
-  ///   runApp(const MyApp());
-  /// }
-  /// ```
-  static Future<void> init() async {
-    await initHiveForFlutter();
-  }
   /// Creates a new [UniswapV3] instance configured for a specific chain.
+  ///
+  /// Pool discovery is performed fully on-chain via the Uniswap V3 Factory
+  /// and Pool contracts — no external API key is required.
   ///
   /// [rpcUrl] - The JSON-RPC endpoint URL (e.g., Infura, Alchemy, or your own node).
   /// [chainId] - The chain ID: 1 (Ethereum), 56 (BSC), 137 (Polygon), 42161 (Arbitrum), 43114 (Avalanche).
-  /// [graphApiKey] - Your API key from The Graph (https://thegraph.com/studio/apikeys/).
   /// [networkName] - Optional display name. Auto-resolved from [chainId] if not provided.
   UniswapV3({
     required this.rpcUrl,
     required this.chainId,
-    required this.graphApiKey,
     this.networkName,
   }) {
     _executor = SwapExecutor();
@@ -188,12 +166,13 @@ class UniswapV3 {
   Future<Pool?> getPool({
     required Token tokenA,
     required Token tokenB,
+    required String rpcUrl
   }) {
     return _executor.getPool(
       chainId: chainId,
       token0: tokenA,
       token1: tokenB,
-      graphApiKey: graphApiKey,
+      rpcUrl: rpcUrl,
     );
   }
 

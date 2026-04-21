@@ -24,7 +24,7 @@ abstract class SwapRepository {
     int pollInterval = 2,
   });
 
-  Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String graphApiKey});
+  Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String rpcUrl});
   Future<BigInt> getChainNetworkFee({required String rpcUrl,required int chainId});
   Future<BigInt> estimateApproveTx({required Token from,required  NetworkRpc network, required double amountIn, required String privateKey});
   Future<BigInt> estimatePermit2Approval({required Token token,required  NetworkRpc network, required double amountIn, required String privateKey});

@@ -1,11 +1,11 @@
 import 'package:flutter/services.dart';
-import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:uniswap_flutter_v3/uniswap/data/datasources/services/transaction_service.dart';
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/allowance.dart';
 
 import 'package:uniswap_flutter_v3/uniswap/utils/token_factory.dart';
 import 'package:web3dart/web3dart.dart';
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:uniswap_flutter_v3/uniswap/domain/entities/network_rpc.dart';
 
@@ -21,7 +21,6 @@ import '../../../utils/constants/abi_paths.dart';
 import '../../../utils/constants/constants.dart';
 import '../../../utils/logger.dart';
 import '../../../utils/my_encoder.dart';
-import '../../models/pool_data.dart';
 
 
 
@@ -118,93 +117,162 @@ class SwapService {
       }
     }
 
-    Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String graphApiKey}) async {
-      logger("Getting pool for ${token0.contractAddress} and ${token1.contractAddress}", runtimeType.toString());
-      final link = getGraphUrl(apiKey: graphApiKey, chainId: chainId);
-      if (link == null) throw Exception('Unsupported chain ID $chainId for The Graph');
-      final HttpLink httpLink = HttpLink(link);
-      final client = GraphQLClient(
-        link: httpLink,
-        // The default store is the InMemoryStore, which does NOT persist to disk
-        cache: GraphQLCache(store: HiveStore()),
-        defaultPolicies: DefaultPolicies(query: Policies(fetch: FetchPolicy.networkOnly)),
-      );
-      String token0Address = token0.contractAddress.toLowerCase();
-      String token1Address = token1.contractAddress.toLowerCase();
-      String readPools =
-      """{
-  pools(where: {
-    or: [
-      { token0: "$token0Address", token1: "$token1Address" },
-      { token0: "$token1Address", token1: "$token0Address" },
-    ]
-  },orderBy:liquidity orderDirection: desc) {
-    id
-    feeTier
-    token0Price
-    token1Price,
-    volumeToken0
-    volumeToken1
-    volumeUSD
-    liquidity
-    token0 {
-    id
-    name
-    symbol
-    decimals
-    derivedETH
-    }
-    token1 {
-    id
-    name
-    symbol
-    decimals
-    derivedETH
-    }
-  }
-}""";
-      final tokensResult = await client.query(QueryOptions(document: gql(readPools)));
-      if (tokensResult.hasException) {
-        throw Exception(tokensResult.exception.toString());
+    /// Discovers the best liquidity pool for a token pair directly from on-chain
+    /// contracts (Uniswap V3 Factory + Pool).
+    ///
+    /// Iterates over all standard fee tiers (100, 500, 3000, 10000), queries the
+    /// Factory for each, reads slot0 (sqrtPriceX96) and liquidity from each Pool
+    /// contract, and returns the pool with the highest liquidity.
+    ///
+    /// Token prices are derived on-chain from sqrtPriceX96.
+    Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String rpcUrl}) async {
+      logger("Getting pool on-chain for ${token0.contractAddress} and ${token1.contractAddress}", runtimeType.toString());
+
+      final factoryAddress = getFactoryAddress(chainId: chainId);
+      if (factoryAddress == null) throw Exception('Unsupported chain ID $chainId for Uniswap V3 Factory');
+
+      final Web3Client web3client = await ClientResolver.resolveClient(rpcUrl: rpcUrl);
+      final TokenFactory tokenFactory = TokenFactory();
+
+      // Load Factory ABI
+      final String factoryAbiStr = await rootBundle.loadString(uniswap_v3_factory_abi);
+      final DeployedContract factoryContract = await tokenFactory.intContract(factoryAbiStr, factoryAddress, "UniswapV3Factory");
+      final getPoolFunction = factoryContract.function('getPool');
+
+      // Load Pool ABI
+      final String poolAbiStr = await rootBundle.loadString(uniswap_v3_pool_abi);
+
+      final EthereumAddress tokenAAddress = EthereumAddress.fromHex(token0.contractAddress);
+      final EthereumAddress tokenBAddress = EthereumAddress.fromHex(token1.contractAddress);
+
+      // Track the best pool (highest liquidity)
+      String? bestPoolAddress;
+      BigInt bestLiquidity = BigInt.zero;
+      BigInt bestSqrtPriceX96 = BigInt.zero;
+      int bestFeeTier = 0;
+      String? onChainToken0Address;
+
+      // Iterate over all standard fee tiers to find pools
+      for (final feeTier in uniswapV3FeeTiers) {
+        try {
+          final result = await web3client.call(
+            contract: factoryContract,
+            function: getPoolFunction,
+            params: [tokenAAddress, tokenBAddress, BigInt.from(feeTier)],
+          );
+
+          final EthereumAddress poolAddr = result.first as EthereumAddress;
+
+          // Zero address means no pool exists for this fee tier
+          if (poolAddr.with0x == '0x0000000000000000000000000000000000000000') {
+            logger("No pool for fee tier $feeTier", runtimeType.toString());
+            continue;
+          }
+
+          final String poolAddrHex = poolAddr.with0x;
+          logger("Found pool at $poolAddrHex for fee tier $feeTier", runtimeType.toString());
+
+          // Read liquidity and slot0 from the pool contract
+          final DeployedContract poolContract = await tokenFactory.intContract(poolAbiStr, poolAddrHex, "Pool_$feeTier");
+
+          final liquidityResult = await web3client.call(
+            contract: poolContract,
+            function: poolContract.function('liquidity'),
+            params: [],
+          );
+          final BigInt liquidity = liquidityResult.first as BigInt;
+
+          if (liquidity == BigInt.zero) {
+            logger("Pool $poolAddrHex has zero liquidity, skipping", runtimeType.toString());
+            continue;
+          }
+
+          final slot0Result = await web3client.call(
+            contract: poolContract,
+            function: poolContract.function('slot0'),
+            params: [],
+          );
+          final BigInt sqrtPriceX96 = slot0Result[0] as BigInt;
+
+          // Read on-chain token0 to determine ordering
+          final token0Result = await web3client.call(
+            contract: poolContract,
+            function: poolContract.function('token0'),
+            params: [],
+          );
+          final String poolToken0 = (token0Result.first as EthereumAddress).with0x;
+
+          logger("Pool $poolAddrHex: liquidity=$liquidity, sqrtPriceX96=$sqrtPriceX96, token0=$poolToken0", runtimeType.toString());
+
+          if (liquidity > bestLiquidity) {
+            bestLiquidity = liquidity;
+            bestPoolAddress = poolAddrHex;
+            bestSqrtPriceX96 = sqrtPriceX96;
+            bestFeeTier = feeTier;
+            onChainToken0Address = poolToken0;
+          }
+        } catch (e) {
+          logger("Error checking fee tier $feeTier: $e", runtimeType.toString());
+          continue;
+        }
       }
-      PoolData poolData = PoolData.fromJson(tokensResult.data!);
-      if (poolData.pools!.isEmpty) {
+
+      if (bestPoolAddress == null) {
+        logger("No pool found for ${token0.symbol}/${token1.symbol}", runtimeType.toString());
         return null;
       }
-      GraphPool pool = poolData.pools!.first;
-      logger("Swap route: Pools result: ${pool.toJson()}", runtimeType.toString());
 
-      if (token0.contractAddress.toLowerCase() == pool.token0?.id?.toLowerCase() && token1.contractAddress.toLowerCase() == pool.token1?.id?.toLowerCase()) {
-        logger("Normal pool", runtimeType.toString());
+      // Derive prices from sqrtPriceX96
+      // sqrtPriceX96 = sqrt(token1/token0) * 2^96
+      // price (token1 per token0) = (sqrtPriceX96 / 2^96)^2
+      print("sqrtPriceX96: $bestSqrtPriceX96");
+      final double sqrtPrice = bestSqrtPriceX96/BigInt.two.pow(96);
+      print("sqrtPrice: $sqrtPrice");
+      final double rawPrice = sqrtPrice * sqrtPrice;
+      print("rawPrice: $rawPrice");
+
+      // Adjust for decimals: price = rawPrice * 10^(token0Decimals - token1Decimals)
+      // But we need to know which token is on-chain token0
+      final bool userToken0IsOnChainToken0 = token0.contractAddress.toLowerCase() == onChainToken0Address!.toLowerCase();
+
+      double token0Price; // How many token1 per token0
+      double token1Price; // How many token0 per token1
+
+      if (userToken0IsOnChainToken0) {
+        // On-chain price = token1/token0 (adjusted for decimals)
+        final double decimalAdjustment = math.pow(10, token0.decimals - token1.decimals).toDouble();
+        token0Price = rawPrice * decimalAdjustment;
+        token1Price = token0Price > 0 ? 1.0 / token0Price : 0;
+        logger("Normal pool order: ${token0.symbol}/${token1.symbol} price=$token0Price", runtimeType.toString());
         return Pool(
           token0: token0,
           token1: token1,
-          feeTier:  pool.feeTier!,
-          poolAddress: pool.id!,
-          //Since graph returns the prices in inverse order for a normal pool, so we need to swap them
-          token0Price: double.parse(pool.token1Price!),
-          token1Price: double.parse(pool.token0Price!),
-          volumeToken0: double.parse(pool.volumeToken1!),
-          volumeToken1: double.parse(pool.volumeToken0!),
-          volumeUsd: double.parse(pool.volumeUsd!),
-          liquidity: double.parse(pool.liquidity!),
-          isInverse: false
+          feeTier: bestFeeTier.toString(),
+          poolAddress: bestPoolAddress,
+          token0Price: token0Price,
+          token1Price: token1Price,
+          liquidity: bestLiquidity.toDouble(),
+          isInverse: false,
         );
       } else {
-        logger("Inverse pool", runtimeType.toString());
+        // User's token0 is actually on-chain token1, so the pool is "inverse"
+        // On-chain price gives onChainToken1/onChainToken0, but user wants token1/token0
+        final double decimalAdjustment = math.pow(10, token1.decimals - token0.decimals).toDouble();
+        print("decimalAdjustment: $decimalAdjustment");
+
+        final double onChainPrice = rawPrice * decimalAdjustment; // user_token0 per user_token1
+        token0Price = onChainPrice > 0 ? 1.0 / onChainPrice : 0; // user_token1 per user_token0
+        token1Price = onChainPrice;
+        logger("Inverse pool order: ${token0.symbol}/${token1.symbol} price=$token0Price", runtimeType.toString());
         return Pool(
           token0: token1,
           token1: token0,
-          feeTier: pool.feeTier!,
-          poolAddress: pool.id!,
-          //No need to swap the prices for inverse pool since we already swap the tokens
-          token0Price: double.parse(pool.token0Price!),
-          token1Price: double.parse(pool.token1Price!),
-          volumeToken0: double.parse(pool.volumeToken1!),
-          volumeToken1: double.parse(pool.volumeToken0!),
-          volumeUsd: double.parse(pool.volumeUsd!),
-          liquidity: double.parse(pool.liquidity!),
-          isInverse: true
+          feeTier: bestFeeTier.toString(),
+          poolAddress: bestPoolAddress,
+          token0Price: token0Price,
+          token1Price: token1Price,
+          liquidity: bestLiquidity.toDouble(),
+          isInverse: true,
         );
       }
     }

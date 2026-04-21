@@ -21,19 +21,26 @@ const String bsc_wbnb_contract = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const String polygon_wpol_contract = "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270";
 const String eth_weth_contract = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
-/// Subgraph IDs for each supported chain on The Graph.
-const Map<int, String> chainSubgraphIds = {
-  1: "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
-  56: "F85MNzUGYqgSHSHRGgeVMNsdnW1KtZSVgFULumXRZTw2",
-  137: "3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm",
+/// Uniswap V3 Factory contract addresses per chain.
+const Map<int, String> chainFactoryAddresses = {
+  1: "0x1F98431c8aD98523631AE4a59f267346ea31F984",   // Ethereum
+  56: "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",  // BSC
+  137: "0x1F98431c8aD98523631AE4a59f267346ea31F984",  // Polygon
 };
 
-/// Builds the full Graph API URL for a given chain using the user's API key.
-///
-/// Returns `null` if the [chainId] is not supported.
-String? getGraphUrl({required String apiKey, required int chainId}) {
-  final subgraphId = chainSubgraphIds[chainId];
-  if (subgraphId == null) return null;
-  return "https://gateway.thegraph.com/api/$apiKey/subgraphs/id/$subgraphId";
-}
+/// Uniswap V3 QuoterV2 contract addresses per chain.
+const Map<int, String> chainQuoterV2Addresses = {
+  1: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",   // Ethereum
+  56: "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",   // BSC
+  137: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",  // Polygon
+};
+
+/// Standard Uniswap V3 fee tiers in hundredths of a bip.
+const List<int> uniswapV3FeeTiers = [100, 500, 3000, 10000];
+
+/// Returns the Factory address for a given [chainId], or `null` if unsupported.
+String? getFactoryAddress({required int chainId}) => chainFactoryAddresses[chainId];
+
+/// Returns the QuoterV2 address for a given [chainId], or `null` if unsupported.
+String? getQuoterV2Address({required int chainId}) => chainQuoterV2Addresses[chainId];
 
