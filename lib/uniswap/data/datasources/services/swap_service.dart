@@ -269,8 +269,8 @@ class SwapService {
           token1: token0,
           feeTier: bestFeeTier.toString(),
           poolAddress: bestPoolAddress,
-          token0Price: token0Price,
-          token1Price: token1Price,
+          token0Price: token1Price,
+          token1Price: token0Price,
           liquidity: bestLiquidity.toDouble(),
           isInverse: true,
         );

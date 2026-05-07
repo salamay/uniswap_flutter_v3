@@ -394,7 +394,7 @@ class UniswapV3 {
     required String privateKey,
   }) async {
     final walletAddress = await _getWalletAddress(privateKey);
-    final amountInWei = toWei(amountIn, pool.token0.decimals);
+    final amountInWei = toWei(amountIn, !pool.isInverse?pool.token0.decimals:pool.token1.decimals);
     final poolFee = _parsePoolFee(pool);
     Pool newPool=_checkPool(pool);
 
@@ -423,7 +423,7 @@ class UniswapV3 {
     required double amountIn,
     required String privateKey,
   }) {
-    final amountInWei = toWei(amountIn, pool.token0.decimals);
+    final amountInWei = toWei(amountIn, !pool.isInverse?pool.token0.decimals:pool.token1.decimals);
     final poolFee = _parsePoolFee(pool);
     final price=pool.token0Price??0;
     Pool newPool=_checkPool(pool);
@@ -454,7 +454,7 @@ class UniswapV3 {
     required String privateKey,
   }) {
     // Native input is always 18 decimals
-    final amountInWei = toWei(amountIn, 18);
+    final amountInWei = toWei(amountIn, !pool.isInverse?pool.token0.decimals:pool.token1.decimals);
     final poolFee = _parsePoolFee(pool);
     Pool newPool=_checkPool(pool);
 
@@ -505,7 +505,7 @@ class UniswapV3 {
     BigInt? gasPrice,
     required int maxGas,
   }) async {
-    final amountInWei = toWei(amountIn, pool.token0.decimals);
+    final amountInWei = toWei(amountIn, !pool.isInverse?pool.token0.decimals:pool.token1.decimals);
     final poolFee = _parsePoolFee(pool);
     double price=!pool.isInverse?pool.token0Price ?? 0:pool.token1Price ?? 0;
     Pool newPool=_checkPool(pool);
@@ -552,7 +552,7 @@ class UniswapV3 {
     BigInt? gasPrice,
     required int maxGas,
   }) async {
-    final amountInWei = toWei(amountIn, pool.token0.decimals);
+    final amountInWei = toWei(amountIn, !pool.isInverse?pool.token0.decimals:pool.token1.decimals);
     final poolFee = _parsePoolFee(pool);
     double price=pool.token0Price??0;
     Pool newPool=_checkPool(pool);
@@ -600,7 +600,7 @@ class UniswapV3 {
     required int maxGas,
   }) async {
     // Native is always 18 decimals
-    final amountInWei = toWei(amountIn, 18);
+    final amountInWei = toWei(amountIn, !pool.isInverse?pool.token0.decimals:pool.token1.decimals);
     final poolFee = _parsePoolFee(pool);
     double price=!pool.isInverse?pool.token0Price ?? 0:pool.token1Price ?? 0;
     Pool newPool=_checkPool(pool);
