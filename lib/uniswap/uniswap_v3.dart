@@ -501,7 +501,7 @@ class UniswapV3 {
     required String privateKey,
     required Pool pool,
     required double amountIn,
-    double slippagePercent = 1,
+    double slippagePercent = 5,
     BigInt? gasPrice,
     required int maxGas,
   }) async {
@@ -548,7 +548,7 @@ class UniswapV3 {
     required String privateKey,
     required Pool pool,
     required double amountIn,
-    double slippagePercent = 0.5,
+    double slippagePercent = 5,
     BigInt? gasPrice,
     required int maxGas,
   }) async {
@@ -595,7 +595,7 @@ class UniswapV3 {
     required String privateKey,
     required Pool pool,
     required double amountIn,
-    double slippagePercent = 1,
+    double slippagePercent = 5,
     BigInt? gasPrice,
     required int maxGas,
   }) async {
