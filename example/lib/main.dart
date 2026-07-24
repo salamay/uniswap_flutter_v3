@@ -8,8 +8,7 @@ import 'package:uniswap_flutter_v3/uniswap_flutter_v3.dart';
 // 1. SETUP — Create a UniswapV3 instance
 // ---------------------------------------------------------------------------
 
-/// One instance per chain. Pass your RPC URL, chain ID, and Graph API key.
-/// Get your Graph API key at: https://thegraph.com/studio/apikeys/
+/// One instance per chain. Pass your RPC URL and chain ID.
 final ethUniswap = UniswapV3(
   rpcUrl: 'https://mainnet.infura.io/v3/YOUR_INFURA_KEY',
   chainId: 1, // Ethereum Mainnet
@@ -67,7 +66,7 @@ Future<void> waitForTx(String hash) async {
 // ---------------------------------------------------------------------------
 
 Future<void> findPoolExample() async {
-  // Automatically fetches the highest-liquidity pool from The Graph
+  // Automatically fetches the highest-liquidity pool on-chain
   String rpcUrl="";
   final pool = await ethUniswap.getPool(tokenA: usdc, tokenB: weth,rpcUrl:rpcUrl);
 

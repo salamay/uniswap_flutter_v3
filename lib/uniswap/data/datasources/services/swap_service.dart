@@ -125,6 +125,29 @@ class SwapService {
     /// contract, and returns the pool with the highest liquidity.
     ///
     /// Token prices are derived on-chain from sqrtPriceX96.
+    ///
+    /// ### `isInverse` (pool token ordering)
+    ///
+    /// A Uniswap V3 pool contract always orders its two tokens by contract
+    /// address (`token0 < token1`), not by the order [token0]/[token1] are
+    /// passed in here. After finding the best pool, this method reads the
+    /// pool's on-chain `token0()` and compares it against the caller's
+    /// [token0]:
+    ///
+    /// - If they match, the pool is in the exact requested order. The
+    ///   returned [Pool.token0]/[Pool.token1] equal [token0]/[token1], and
+    ///   `isInverse` is `false`.
+    /// - If they don't match (e.g. caller asked for USDT/USDC but the pool
+    ///   only exists on-chain as USDC/USDT), the returned [Pool.token0] is
+    ///   set to the caller's [token1] and [Pool.token1] to the caller's
+    ///   [token0] — i.e. swapped to reflect on-chain reality — and
+    ///   `isInverse` is set to `true`. [Pool.token0Price]/[Pool.token1Price]
+    ///   are swapped the same way so they stay consistent with
+    ///   [Pool.token0]/[Pool.token1].
+    ///
+    /// Callers that need to know which side corresponds to what they
+    /// originally requested as `token0` must check `pool.isInverse` (see
+    /// [Pool] docs for an example).
     Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String rpcUrl}) async {
       logger("Getting pool on-chain for ${token0.contractAddress} and ${token1.contractAddress}", runtimeType.toString());
 

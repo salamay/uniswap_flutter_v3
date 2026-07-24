@@ -24,6 +24,10 @@ abstract class SwapRepository {
     int pollInterval = 2,
   });
 
+  /// Discovers the best on-chain pool for [token0]/[token1]. If the pool only
+  /// exists in the opposite token order on-chain, the returned [Pool] has
+  /// `token0`/`token1` swapped and `isInverse` set to `true` — see the
+  /// [Pool] class docs for details.
   Future<Pool?> getPool({required int chainId, required Token token0, required Token token1, required String rpcUrl});
   Future<BigInt> getChainNetworkFee({required String rpcUrl,required int chainId});
   Future<BigInt> estimateApproveTx({required Token from,required  NetworkRpc network, required double amountIn, required String privateKey});

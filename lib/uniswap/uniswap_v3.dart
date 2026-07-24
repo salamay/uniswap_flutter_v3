@@ -17,7 +17,7 @@ import 'domain/entities/transaction_status.dart';
 /// this class lets you work with human-readable amounts and a clean API.
 ///
 /// Pool discovery is performed **fully on-chain** by querying the Uniswap V3
-/// Factory and Pool contracts directly via RPC — no Graph API key needed.
+/// Factory and Pool contracts directly via RPC.
 ///
 /// ---
 ///
@@ -151,7 +151,7 @@ class UniswapV3 {
   // Pool Discovery
   // ---------------------------------------------------------------------------
 
-  /// Fetches the best liquidity pool for a token pair from The Graph.
+  /// Fetches the best liquidity pool for a token pair, discovered on-chain.
   ///
   /// Returns `null` if no pool exists for the given pair.
   /// The pool with the highest liquidity is selected automatically.
@@ -163,6 +163,20 @@ class UniswapV3 {
   ///   print('Fee tier: ${pool.feeTier}');
   /// }
   /// ```
+  ///
+  /// ### `pool.isInverse`
+  ///
+  /// A pool's on-chain contract always orders its two tokens by contract
+  /// address, not by the order [tokenA]/[tokenB] are passed here. If the
+  /// only pool that exists is ordered the *opposite* way (e.g. you asked for
+  /// USDT/USDC but the pool only exists as USDC/USDT), the returned
+  /// `pool.token0`/`pool.token1` are swapped to match on-chain reality and
+  /// `pool.isInverse` is set to `true`. Methods in this class that take a
+  /// `pool` (e.g. [swapTokenToToken], [estimateTokenToTokenSwap]) already
+  /// account for this internally, but if you read `pool.token0`/`pool.token1`
+  /// or `pool.token0Price`/`pool.token1Price` directly to do your own
+  /// calculations, check `pool.isInverse` first — see the [Pool] class docs
+  /// for details and an example.
   Future<Pool?> getPool({
     required Token tokenA,
     required Token tokenB,
@@ -891,8 +905,10 @@ class UniswapV3 {
   }
 
 
-  //Change back or reverse the token if the pool indicate inverse
-  //So  that the executor maintain the trading path, this is because the graph can return the pool in the wrong order as the user intends
+  /// Un-swaps [pool.token0]/[pool.token1] back to the order the caller
+  /// originally requested when `pool.isInverse` is `true`, so the executor
+  /// always builds the swap path in the direction the caller intends
+  /// regardless of how the pool happened to be ordered on-chain.
   Pool _checkPool(Pool pool){
     Token token0=pool.token0;
     Token token1=pool.token1;

@@ -1,9 +1,9 @@
 # uniswap_flutter_v3
 
 A Flutter plugin that wraps the Uniswap V3 protocol with a small, high-level
-Dart API. It handles pool discovery via The Graph, gas estimation,
-ERC-20/Permit2 approvals, and token/native swaps across multiple EVM chains,
-so you can work with human-readable amounts instead of raw `BigInt` wei.
+Dart API. It handles on-chain pool discovery, gas estimation, ERC-20/Permit2
+approvals, and token/native swaps across multiple EVM chains, so you can work
+with human-readable amounts instead of raw `BigInt` wei.
 
 Supported chains out of the box: **Ethereum (1), BSC (56) and Polygon (137)**. Any chain with a deployed Uniswap V3
 SwapRouter02 / Universal Router can be added by extending the constants.
@@ -13,7 +13,7 @@ SwapRouter02 / Universal Router can be added by extending the constants.
 ## Features
 
 - One `UniswapV3` facade per chain — no manual `NetworkRpc` / `NetworkFee` wiring.
-- Automatic best-pool lookup from the Uniswap V3 subgraph on The Graph.
+- Automatic best-pool lookup, discovered fully on-chain via the Uniswap V3 Factory and Pool contracts.
 - Gas estimation helpers for every swap and approval type.
 - Token → Token, Token → Native, Native → Token swap execution.
 - Standard ERC-20 `approve` and Uniswap `Permit2` approval flows.
@@ -22,16 +22,14 @@ SwapRouter02 / Universal Router can be added by extending the constants.
 - Human-readable amounts in (`double`) and out (`BigInt`) via `toWei` / `fromWei`.
 
 ---
-## Features
-```bash
-Install the latest plugin starting form version 0.0.6
+
 ## Installation
 
 Add the plugin to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  uniswap_flutter_v3: ^0.0.6
+  uniswap_flutter_v3: ^0.0.9
 ```
 
 Then run:
@@ -48,9 +46,7 @@ You will need:
 
 1. **A JSON-RPC endpoint** for your target chain (Infura, Alchemy, QuickNode, or
    a public RPC such as `https://bsc-dataseed.binance.org`).
-2. **A Graph API key** for pool discovery. Create one free at
-   <https://thegraph.com/studio/apikeys/>.
-3. **A funded wallet** whose private key will sign transactions.
+2. **A funded wallet** whose private key will sign transactions.
 
 > Private keys should never be hard-coded in production apps. Use a secure
 > storage solution such as `flutter_secure_storage`.
@@ -59,27 +55,12 @@ You will need:
 
 ## Initialization
 
-Call `UniswapV3.init()` once before constructing any instance. It boots the
-Hive store used by `graphql_flutter` for subgraph caching.
-
-```dart
-import 'package:flutter/material.dart';
-import 'package:uniswap_flutter_v3/uniswap_flutter_v3.dart';
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await UniswapV3.init();
-  runApp(const MyApp());
-}
-```
-
 Create one instance per chain you want to target:
 
 ```dart
 final bsc = UniswapV3(
   rpcUrl: 'https://bsc-dataseed.binance.org',
   chainId: 56,
-  graphApiKey: 'YOUR_GRAPH_API_KEY',
 );
 ```
 
@@ -123,12 +104,42 @@ print('Pool: ${pool.poolAddress}, fee tier: ${pool.feeTier}');
 `getPool` returns the highest-liquidity pool for the pair, or `null` if none
 exists.
 
+### Understanding `pool.isInverse`
+
+A Uniswap V3 pool contract always stores its two tokens ordered by contract
+address, not by the order you pass `tokenA`/`tokenB`. Sometimes the pool that
+actually exists on-chain is only available in the *opposite* order of what
+you asked for — e.g. you request `tokenA: usdt, tokenB: usdc`, but the pool
+only exists on-chain as USDC/USDT.
+
+When that happens, `getPool` doesn't fail — it returns the pool it found and
+sets `pool.isInverse = true`. In that case `pool.token0`/`pool.token1` (and
+`pool.token0Price`/`pool.token1Price`) are **swapped** relative to what you
+requested: `pool.token0` is actually the token you passed as `tokenB`, and
+`pool.token1` is the token you passed as `tokenA`.
+
+All of this library's `estimate*`/`swap*` methods already account for
+`isInverse` internally, so you don't need to think about it for normal swaps.
+You only need to check `pool.isInverse` yourself if you read
+`pool.token0`/`pool.token1`/`pool.token0Price`/`pool.token1Price` directly to
+do your own calculations, e.g.:
+
+```dart
+final pool = await bsc.getPool(tokenA: usdt, tokenB: usdc,rpcUrl:rpcUrl);
+
+// Decimals/price for the token you originally requested as tokenA (usdt):
+final tokenADecimals = !pool!.isInverse ? pool.token0.decimals : pool.token1.decimals;
+final tokenAPriceInTokenB = !pool.isInverse ? pool.token0Price : pool.token1Price;
+BigInt gasPrice = await uniswapV3.getChainNetworkFee(rpcUrl: rpcUrl, chainId: chainId);;
+
+```
+
 ---
 
 ## Token → Token Swap
 
 ```dart
-final pool = await bsc.getPool(tokenA: dai, tokenB: usdt);
+final pool = await bsc.getPool(tokenA: dai, tokenB: usdt,rpcUrl:rpcUrl);
 
 // 1. Approve the SwapRouter to spend DAI.
 final approveGas = await bsc.estimateApproval(
@@ -152,7 +163,7 @@ final swapHash = await bsc.swapTokenToToken(
   privateKey: key,
   pool: pool,
   amountIn: 1,           // 1 DAI (human-readable)
-  slippagePercent: 1,    // 1% tolerance
+  slippagePercent: 5,    // 5% tolerance
   maxGas: swapGas.toInt(),
 );
 ```
@@ -164,8 +175,15 @@ final swapHash = await bsc.swapTokenToToken(
 Token → native swaps go through Uniswap's Universal Router and therefore
 require a **Permit2** allowance (not a regular ERC-20 approval):
 
+Uniswap V3 pools only ever trade against the **wrapped** native token (WBNB,
+WETH, WMATIC, ...) — there is no on-chain USDT/BNB pool, only USDT/WBNB. So
+`wbnb` is what you pass to `getPool` to locate the pool. The Universal Router
+then handles unwrapping for you as part of the swap: `swapTokenToNative`
+actually delivers plain **native BNB** to your wallet, not WBNB tokens — you
+never receive or need to unwrap WBNB yourself.
+
 ```dart
-final pool = await bsc.getPool(tokenA: usdt, tokenB: wbnb);
+final pool = await bsc.getPool(tokenA: usdt, tokenB: wbnb,rpcUrl:rpcUrl);
 
 final permit2Gas = await bsc.estimatePermit2Approval(
   token: usdt, amount: 1, privateKey: key,
@@ -177,7 +195,13 @@ final approveHash = await bsc.approveUniswapPermit2(
   maxGas: permit2Gas.toInt(),
 );
 await bsc.waitForTransaction(approveHash, 60);
-
+// Call permit2
+String callPermitHash=await uniswapV3.callPermit2(
+token: usdt,
+privateKey: key,
+maxGas: permit2Gas.toInt(),
+gasPrice: gasPrice
+);
 final swapGas = await bsc.estimateTokenToNativeSwap(
   pool: pool!, amountIn: 1, privateKey: key,
 );
@@ -186,7 +210,7 @@ final swapHash = await bsc.swapTokenToNative(
   privateKey: key,
   pool: pool,
   amountIn: 1,
-  slippagePercent: 0.5,
+  slippagePercent: 5,    // 5% tolerance
   maxGas: swapGas.toInt(),
 );
 ```
@@ -195,10 +219,16 @@ final swapHash = await bsc.swapTokenToNative(
 
 ## Native → Token Swap
 
-No approval is needed — native currency is paid directly with the transaction:
+No approval is needed — native currency is paid directly with the transaction.
+
+As with the token → native flow, `wbnb` is passed to `getPool` because pools
+only exist as WBNB/USDC on-chain, never native BNB/USDC directly. You still
+send plain **native BNB** as `amountIn` — the Universal Router wraps it into
+WBNB internally to route through the pool, then delivers the output token
+(USDC) to your wallet. You never touch WBNB directly:
 
 ```dart
-final pool = await bsc.getPool(tokenA: wbnb, tokenB: usdc);
+final pool = await bsc.getPool(tokenA: wbnb, tokenB: usdc,rpcUrl:rpcUrl);
 
 final swapGas = await bsc.estimateNativeToTokenSwap(
   pool: pool!, amountIn: 0.001, privateKey: key,
@@ -208,7 +238,7 @@ final swapHash = await bsc.swapNativeToToken(
   privateKey: key,
   pool: pool,
   amountIn: 0.001,       // 0.001 BNB
-  slippagePercent: 1,
+  slippagePercent: 5,
   maxGas: swapGas.toInt(),
 );
 ```
@@ -234,12 +264,22 @@ Poll interval is 4s; `maxWaitTime` is in seconds.
 | ------------- | --------- | -------- | ---------------------------------------------------------- |
 | `rpcUrl`      | `String`  | yes      | JSON-RPC endpoint for the chain.                           |
 | `chainId`     | `int`     | yes      | Chain ID (1, 56, 137, 42161, 43114, ...).                  |
-| `graphApiKey` | `String`  | yes      | The Graph API key for subgraph queries.                    |
 | `networkName` | `String?` | no       | Display name. Auto-resolved from `chainId` if omitted.     |
 
 ### Pool discovery
 
 - `Future<Pool?> getPool({required Token tokenA, required Token tokenB})`
+
+`Pool` fields:
+
+| Field                        | Type     | Description                                                                                   |
+| ---------------------------- | -------- | ----------------------------------------------------------------------------------------------|
+| `poolAddress`                | `String` | The on-chain address of the pool contract.                                                    |
+| `feeTier`                    | `String?`| The fee tier the pool was found on (`100`, `500`, `3000`, or `10000`).                         |
+| `token0` / `token1`          | `Token`  | The pool's tokens **as actually found on-chain** — see `isInverse` below.                     |
+| `token0Price` / `token1Price`| `double?`| Price of one token denominated in the other, matching `token0`/`token1` order.                |
+| `liquidity`                  | `double?`| Raw on-chain liquidity of the selected pool.                                                   |
+| `isInverse`                  | `bool`   | `true` if `token0`/`token1` are swapped relative to the `tokenA`/`tokenB` you requested — see [Understanding `pool.isInverse`](#understanding-poolisinverse). |
 
 ### Gas estimation (all return `BigInt` in wei)
 
