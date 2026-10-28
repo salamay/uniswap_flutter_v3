@@ -50,6 +50,20 @@ class SwapService {
         return pol_uniswap_universal_router_contract;
       case chain_id_eth:
         return eth_uniswap_universal_router_contract;
+      case chain_id_arb:
+        return arb_uniswap_universal_router_contract;
+      case chain_id_celo:
+        return celo_uniswap_universal_router_contract;
+      case chain_id_monad:
+        return monad_uniswap_universal_router_contract;
+      case chain_id_optimism:
+        return optmism_uniswap_universal_router_contract;
+      case chain_id_zora:
+        return zora_uniswap_universal_router_contract;
+      case chain_id_avax:
+        return avax_uniswap_universal_router_contract;
+      case chain_id_base:
+        return base_uniswap_universal_router_contract;
       default:
         return bsc_uniswap_universal_router_contract;
     }
@@ -63,8 +77,22 @@ class SwapService {
         return pol_swapRouter02;
       case chain_id_eth:
         return eth_swapRouter02;
+      case chain_id_arb:
+        return arb_swapRouter02;
+      case chain_id_celo:
+        return celo_swapRouter02;
+      case chain_id_monad:
+        return monad_swapRouter02;
+      case chain_id_optimism:
+        return optmism_swapRouter02;
+      case chain_id_zora:
+        return zora_swapRouter02;
+      case chain_id_avax:
+        return avax_swapRouter02;
+      case chain_id_base:
+        return base_swapRouter02;
       default:
-        return bsc_swapRouter02;
+        return eth_swapRouter02;
     }
   }
 
@@ -77,6 +105,20 @@ class SwapService {
         return polygon_wpol_contract;
       case chain_id_eth:
         return eth_weth_contract;
+      case chain_id_arb:
+        return arb_weth_contract;
+      case chain_id_celo:
+        return celo_weth_contract;
+      case chain_id_monad:
+        return monad_weth_contract;
+      case chain_id_optimism:
+        return opt_weth_contract;
+      case chain_id_zora:
+        return zora_weth_contract;
+      case chain_id_avax:
+        return avax_weth_contract;
+      case chain_id_base:
+        return base_weth_contract;
       default:
         return eth_weth_contract;
     }
